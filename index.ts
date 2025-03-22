@@ -29,11 +29,11 @@ const originalConsoleError = console.error;
 
 // Current log level - can be changed at runtime
 // Initialize with default or from environment variable
-let logLevel: LoggingLevel = (process.env.LOG_LEVEL as LoggingLevel) || 'debug';
+let logLevel: LoggingLevel = (process.env.LOG_LEVEL as LoggingLevel) || 'info';
 
-// Validate that the log level is valid, default to 'debug' if not
+// Validate that the log level is valid, default to 'info' if not
 if (!['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'].includes(logLevel)) {
-  logLevel = 'debug';
+  logLevel = 'info';
 }
 
 // Map of log levels and their priorities (higher number = higher priority)
@@ -1383,7 +1383,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       }
 
       return {
-        content: [{ type: "text", text: diagnosticsContent }],
+        contents: [{ type: "text", text: diagnosticsContent, uri: uri }],
       };
     }
 
@@ -1400,7 +1400,10 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         const hoverUri = new URL(uri);
 
         // Get the file path (remove the leading lsp-hover:// protocol part)
-        const filePath = hoverUri.pathname.slice(2); // Skip the '//' part
+        // Ensure we handle paths correctly - URL parsing can remove the leading slash
+        const filePath = decodeURIComponent(hoverUri.pathname).startsWith('/') 
+          ? decodeURIComponent(hoverUri.pathname) 
+          : '/' + decodeURIComponent(hoverUri.pathname);
 
         // Get the query parameters
         const lineParam = hoverUri.searchParams.get('line');
@@ -1439,7 +1442,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         debug(`Got hover information: ${hoverText.slice(0, 100)}${hoverText.length > 100 ? '...' : ''}`);
 
         return {
-          content: [{ type: "text", text: hoverText }],
+          contents: [{ type: "text", text: hoverText, uri: uri }],
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1461,7 +1464,10 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         const completionsUri = new URL(uri);
 
         // Get the file path (remove the leading lsp-completions:// protocol part)
-        const filePath = completionsUri.pathname.slice(2); // Skip the '//' part
+        // Ensure we handle paths correctly - URL parsing can remove the leading slash
+        const filePath = decodeURIComponent(completionsUri.pathname).startsWith('/') 
+          ? decodeURIComponent(completionsUri.pathname) 
+          : '/' + decodeURIComponent(completionsUri.pathname);
 
         // Get the query parameters
         const lineParam = completionsUri.searchParams.get('line');
@@ -1500,7 +1506,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         debug(`Got ${completions.length} completions`);
 
         return {
-          content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
+          contents: [{ type: "text", text: JSON.stringify(completions, null, 2), uri: uri }],
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1514,7 +1520,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logError(`Error handling resource request: ${errorMessage}`);
     return {
-      content: [{ type: "text", text: `Error: ${errorMessage}` }],
+      contents: [{ type: "text", text: `Error: ${errorMessage}`, uri: request.params.uri }],
       isError: true,
     };
   }
