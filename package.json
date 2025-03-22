@@ -1,7 +1,7 @@
 {
   "name": "lsp-mcp-server",
-  "version": "0.1.0",
-  "description": "MCP server for LSP Hover and Completions",
+  "version": "0.2.0",
+  "description": "MCP server for LSP Hover, Completions, and Diagnostics with resource-based access",
   "license": "MIT",
   "type": "module",
   "bin": {

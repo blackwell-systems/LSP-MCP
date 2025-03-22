@@ -15,6 +15,7 @@ This enables LLMs to utilize LSPs for more accurate code suggestions.
 
 ## Features
 
+### MCP Tools
 - `get_info_on_location`: Get hover information at a specific location in a file
 - `get_completions`: Get completion suggestions at a specific location in a file
 - `get_code_actions`: Get code actions for a specific range in a file
@@ -23,8 +24,18 @@ This enables LLMs to utilize LSPs for more accurate code suggestions.
 - `get_diagnostics`: Get diagnostic messages (errors, warnings) for open files
 - `start_lsp`: Start the LSP server with a specified root directory
 - `restart_lsp_server`: Restart the LSP server without restarting the MCP server
-- Real-time diagnostic updates via MCP resource subscriptions
-- Detailed logging for debugging and auditing
+- `set_log_level`: Change the server's logging verbosity level at runtime
+
+### MCP Resources
+- `lsp-diagnostics://` resources for accessing diagnostic messages with real-time updates via subscriptions
+- `lsp-hover://` resources for retrieving hover information at specific file locations
+- `lsp-completions://` resources for getting code completion suggestions at specific positions
+
+### Additional Features
+- Comprehensive logging system with multiple severity levels
+- Colorized console output for better readability
+- Runtime-configurable log level
+- Detailed error handling and reporting
 - Simple command-line interface
 
 ## Prerequisites
@@ -84,18 +95,40 @@ With version 0.2.0 and later, you must explicitly start the LSP server by callin
 
 ### Logging
 
-You can enable logging to a file by setting the `LSP_MCP_LOG` environment variable before starting the server:
+The server includes a comprehensive logging system with 8 severity levels:
+- `debug`: Detailed information for debugging purposes
+- `info`: General informational messages about system operation
+- `notice`: Significant operational events
+- `warning`: Potential issues that might need attention
+- `error`: Error conditions that affect operation but don't halt the system
+- `critical`: Critical conditions requiring immediate attention
+- `alert`: System is in an unstable state
+- `emergency`: System is unusable
 
-```
-export LSP_MCP_LOG=/path/to/lsp-mcp.log
-npx tritlo/lsp-mcp /path/to/lsp-server [lsp-server-args...]
-```
+By default, logs are sent to:
+1. Console output with color-coding for better readability
+2. MCP notifications to the client (via the `notifications/message` method)
 
-This will create a detailed log file with timestamps that captures:
-- All console output
-- LSP protocol messages
-- MCP tool requests and responses
-- Errors and exceptions
+#### Viewing Debug Logs
+
+For detailed debugging, you can:
+
+1. Use the `claude --mcp-debug` flag when running Claude to see all MCP traffic between Claude and the server:
+   ```
+   claude --mcp-debug
+   ```
+
+2. Change the log level at runtime using the `set_log_level` tool:
+   ```json
+   {
+     "tool": "set_log_level",
+     "arguments": {
+       "level": "debug"
+     }
+   }
+   ```
+
+The default log level is `info`, which shows moderate operational detail while filtering out verbose debug messages.
 
 ## API
 
@@ -277,9 +310,26 @@ Example for all open files:
 }
 ```
 
+### set_log_level
+
+Sets the server's logging level to control verbosity of log messages.
+
+Parameters:
+- `level`: The logging level to set. One of: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`.
+
+Example:
+```json
+{
+  "tool": "set_log_level",
+  "arguments": {
+    "level": "debug"
+  }
+}
+```
+
 ## MCP Resources
 
-In addition to tools, the server also provides resources for accessing diagnostics with real-time updates:
+In addition to tools, the server provides resources for accessing LSP features including diagnostics, hover information, and code completions:
 
 ### Diagnostic Resources
 
@@ -291,20 +341,63 @@ Resource URIs:
 
 Important: Files must be opened using the `open_document` tool before diagnostics can be accessed.
 
+### Hover Information Resources
+
+The server exposes hover information via the `lsp-hover://` resource scheme. This allows you to get information about code elements at specific positions in files.
+
+Resource URI format:
+```
+lsp-hover:///path/to/file?line={line}&character={character}&language_id={language_id}
+```
+
+Parameters:
+- `line`: Line number (1-based)
+- `character`: Character position (1-based)
+- `language_id`: The programming language (e.g., "haskell")
+
+Example:
+```
+lsp-hover:///home/user/project/src/Main.hs?line=42&character=10&language_id=haskell
+```
+
+### Code Completion Resources
+
+The server exposes code completion suggestions via the `lsp-completions://` resource scheme. This allows you to get completion candidates at specific positions in files.
+
+Resource URI format:
+```
+lsp-completions:///path/to/file?line={line}&character={character}&language_id={language_id}
+```
+
+Parameters:
+- `line`: Line number (1-based)
+- `character`: Character position (1-based)
+- `language_id`: The programming language (e.g., "haskell")
+
+Example:
+```
+lsp-completions:///home/user/project/src/Main.hs?line=42&character=10&language_id=haskell
+```
+
 ### Listing Available Resources
 
-To discover available diagnostic resources, use the MCP `resources/list` endpoint. The response will include all available diagnostics resources for currently open files.
+To discover available resources, use the MCP `resources/list` endpoint. The response will include all available resources for currently open files, including:
+- Diagnostics resources for all open files
+- Hover information templates for all open files
+- Code completion templates for all open files
 
-### Subscribing to Diagnostic Updates
+### Subscribing to Resource Updates
 
-To receive real-time updates when diagnostics change (e.g., when files are modified and new errors or warnings appear), subscribe to the diagnostic resources using the MCP `resources/subscribe` endpoint.
+Diagnostic resources support subscriptions to receive real-time updates when diagnostics change (e.g., when files are modified and new errors or warnings appear). Subscribe to diagnostic resources using the MCP `resources/subscribe` endpoint.
+
+Note: Hover and completion resources don't support subscriptions as they represent point-in-time queries.
 
 ### Working with Resources vs. Tools
 
-You can choose between two approaches for accessing diagnostics:
+You can choose between two approaches for accessing LSP features:
 
-1. Tool-based approach: Use the `get_diagnostics` tool for a simple, direct way to fetch diagnostics.
-2. Resource-based approach: Use the `lsp-diagnostics://` resources for a more RESTful approach that supports real-time updates through subscriptions.
+1. Tool-based approach: Use the `get_diagnostics`, `get_info_on_location`, and `get_completions` tools for a simple, direct way to fetch information.
+2. Resource-based approach: Use the `lsp-diagnostics://`, `lsp-hover://`, and `lsp-completions://` resources for a more RESTful approach.
 
 Both approaches provide the same data in the same format and enforce the same requirement that files must be opened first.
 

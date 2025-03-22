@@ -20,8 +20,6 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 // Set up logging with multiple log levels
-const logFilePath = process.env.LSP_MCP_LOG;
-let logStream: fsSync.WriteStream | null = null;
 type LoggingLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
 
 // Store original console methods before we do anything else
@@ -30,7 +28,7 @@ const originalConsoleWarn = console.warn;
 const originalConsoleError = console.error;
 
 // Current log level - can be changed at runtime
-let logLevel: LoggingLevel = 'debug';
+let logLevel: LoggingLevel = 'info';  // Default to 'info' instead of 'debug'
 
 // Map of log levels and their priorities (higher number = higher priority)
 const LOG_LEVEL_PRIORITY: Record<LoggingLevel, number> = {
@@ -48,21 +46,6 @@ const LOG_LEVEL_PRIORITY: Record<LoggingLevel, number> = {
 const shouldLog = (level: LoggingLevel): boolean => {
   return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[logLevel];
 };
-
-if (logFilePath) {
-  try {
-    // Create or open the log file in append mode
-    logStream = fsSync.createWriteStream(logFilePath, { flags: 'a' });
-
-    // Add timestamp to log entries
-    const timestamp = new Date().toISOString();
-    // Using original console method before we set up the redirections
-    logStream.write(`\n[${timestamp}] [info] LSP MCP Server started\n`);
-  } catch (error) {
-    // Use original console method to prevent recursion before we're fully set up
-    originalConsoleError(`Error opening log file ${logFilePath}:`, error);
-  }
-}
 
 // Core logging function
 const log = (level: LoggingLevel, ...args: any[]): void => {
@@ -110,11 +93,6 @@ const log = (level: LoggingLevel, ...args: any[]): void => {
   }
   
   consoleMethod(`${consolePrefix} ${message}`);
-  
-  // Write to log file if available
-  if (logStream) {
-    logStream.write(`[${timestamp}] [${level}] ${message}\n`);
-  }
   
   // Send notification to MCP client if server is available and initialized
   if (server && typeof server.notification === 'function') {
@@ -905,6 +883,20 @@ const server = new Server(
             pattern: "lsp-diagnostics://{file_path}",
             description: "Get diagnostic messages (errors, warnings) for a specific file or all files",
             subscribe: true,
+          },
+          {
+            name: "lsp-hover",
+            scheme: "lsp-hover",
+            pattern: "lsp-hover://{file_path}?line={line}&character={character}&language_id={language_id}",
+            description: "Get hover information for a specific location in a file",
+            subscribe: false,
+          },
+          {
+            name: "lsp-completions",
+            scheme: "lsp-completions",
+            pattern: "lsp-completions://{file_path}?line={line}&character={character}&language_id={language_id}",
+            description: "Get completion suggestions for a specific location in a file",
+            subscribe: false,
           }
         ]
       },
@@ -1303,18 +1295,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Ensure log file is closed properly on process exit
+// Clean up on process exit
 process.on('exit', async () => {
   info("Shutting down MCP server...");
   try {
     await lspClient.shutdown();
   } catch (error) {
     warning("Error during shutdown:", error);
-  }
-
-  if (logStream) {
-    log('info', "LSP MCP Server exited");
-    logStream.end();
   }
 });
 
@@ -1333,7 +1320,7 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-// Resource handler for diagnostics
+// Resource handler for diagnostics, hover, and completions
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   try {
     debug(`Handling ReadResource request for URI: ${request.params.uri}`);
@@ -1384,6 +1371,128 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       return {
         content: [{ type: "text", text: diagnosticsContent }],
       };
+    }
+    
+    // Parse the lsp-hover URI
+    if (uri.startsWith('lsp-hover://')) {
+      // Check if LSP client is initialized
+      if (!lspClient) {
+        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+      }
+      
+      try {
+        // Extract parameters from URI
+        // Format: lsp-hover://{file_path}?line={line}&character={character}&language_id={language_id}
+        const hoverUri = new URL(uri);
+        
+        // Get the file path (remove the leading lsp-hover:// protocol part)
+        const filePath = hoverUri.pathname.slice(2); // Skip the '//' part
+        
+        // Get the query parameters
+        const lineParam = hoverUri.searchParams.get('line');
+        const characterParam = hoverUri.searchParams.get('character');
+        const languageId = hoverUri.searchParams.get('language_id') || "haskell"; // Default to haskell if not specified
+        
+        if (!filePath || !lineParam || !characterParam) {
+          throw new Error("Invalid lsp-hover URI. Required parameters: file_path, line, character");
+        }
+        
+        // Parse line and character as numbers
+        const line = parseInt(lineParam, 10);
+        const character = parseInt(characterParam, 10);
+        
+        if (isNaN(line) || isNaN(character)) {
+          throw new Error("Line and character must be valid numbers");
+        }
+        
+        debug(`Getting hover info for ${filePath} at line ${line}, character ${character}`);
+        
+        // Read the file content
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        
+        // Create a file URI
+        const fileUri = `file://${path.resolve(filePath)}`;
+        
+        // Open the document in the LSP server (won't reopen if already open)
+        await lspClient.openDocument(fileUri, fileContent, languageId);
+        
+        // Get information at the location (LSP is 0-based)
+        const hoverText = await lspClient.getInfoOnLocation(fileUri, {
+          line: line - 1,
+          character: character - 1
+        });
+        
+        debug(`Got hover information: ${hoverText.slice(0, 100)}${hoverText.length > 100 ? '...' : ''}`);
+        
+        return {
+          content: [{ type: "text", text: hoverText }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error parsing hover URI or getting hover information: ${errorMessage}`);
+        throw new Error(`Error processing hover request: ${errorMessage}`);
+      }
+    }
+    
+    // Parse the lsp-completions URI
+    if (uri.startsWith('lsp-completions://')) {
+      // Check if LSP client is initialized
+      if (!lspClient) {
+        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+      }
+      
+      try {
+        // Extract parameters from URI
+        // Format: lsp-completions://{file_path}?line={line}&character={character}&language_id={language_id}
+        const completionsUri = new URL(uri);
+        
+        // Get the file path (remove the leading lsp-completions:// protocol part)
+        const filePath = completionsUri.pathname.slice(2); // Skip the '//' part
+        
+        // Get the query parameters
+        const lineParam = completionsUri.searchParams.get('line');
+        const characterParam = completionsUri.searchParams.get('character');
+        const languageId = completionsUri.searchParams.get('language_id') || "haskell"; // Default to haskell if not specified
+        
+        if (!filePath || !lineParam || !characterParam) {
+          throw new Error("Invalid lsp-completions URI. Required parameters: file_path, line, character");
+        }
+        
+        // Parse line and character as numbers
+        const line = parseInt(lineParam, 10);
+        const character = parseInt(characterParam, 10);
+        
+        if (isNaN(line) || isNaN(character)) {
+          throw new Error("Line and character must be valid numbers");
+        }
+        
+        debug(`Getting completions for ${filePath} at line ${line}, character ${character}`);
+        
+        // Read the file content
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        
+        // Create a file URI
+        const fileUri = `file://${path.resolve(filePath)}`;
+        
+        // Open the document in the LSP server (won't reopen if already open)
+        await lspClient.openDocument(fileUri, fileContent, languageId);
+        
+        // Get completions at the location (LSP is 0-based)
+        const completions = await lspClient.getCompletion(fileUri, {
+          line: line - 1,
+          character: character - 1
+        });
+        
+        debug(`Got ${completions.length} completions`);
+        
+        return {
+          content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error parsing completions URI or getting completions: ${errorMessage}`);
+        throw new Error(`Error processing completions request: ${errorMessage}`);
+      }
     }
 
     throw new Error(`Unknown resource URI: ${uri}`);
@@ -1562,7 +1671,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       return { resources: [] }; // Return empty list if LSP is not initialized
     }
 
-    // List all diagnostic resources (one for each open file)
+    // List all resources (diagnostics, hover, and completions templates for each open file)
     const resources = [];
 
     // Add the "all diagnostics" resource
@@ -1573,15 +1682,38 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       subscribe: true,
     });
 
-    // For each open document, add a resource
+    // For each open document, add resources
     lspClient.getOpenDocuments().forEach(uri => {
       if (uri.startsWith('file://')) {
         const filePath = uri.slice(7); // Remove 'file://' prefix
+        const fileName = path.basename(filePath);
+        
+        // Add diagnostics resource
         resources.push({
           uri: `lsp-diagnostics://${filePath}`,
-          name: `Diagnostics for ${path.basename(filePath)}`,
+          name: `Diagnostics for ${fileName}`,
           description: `LSP diagnostics for ${filePath}`,
           subscribe: true,
+        });
+        
+        // Add hover resource template
+        // We don't add specific hover resources since they require line/character coordinates
+        // which are not known until the client requests them
+        resources.push({
+          uri: `lsp-hover://${filePath}?line={line}&character={character}&language_id=haskell`,
+          name: `Hover for ${fileName}`,
+          description: `LSP hover information template for ${fileName}`,
+          subscribe: false,
+          template: true,
+        });
+        
+        // Add completions resource template
+        resources.push({
+          uri: `lsp-completions://${filePath}?line={line}&character={character}&language_id=haskell`,
+          name: `Completions for ${fileName}`,
+          description: `LSP code completion suggestions template for ${fileName}`,
+          subscribe: false,
+          template: true,
         });
       }
     });
@@ -1607,9 +1739,6 @@ async function runServer() {
   info("Using LSP server:", lspServerPath);
   if (lspServerArgs.length > 0) {
     info("With arguments:", lspServerArgs.join(' '));
-  }
-  if (logFilePath) {
-    info(`Logging to file: ${logFilePath}`);
   }
 
   // Create LSP client instance but don't start the process or initialize yet
