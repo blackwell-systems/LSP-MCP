@@ -539,30 +539,29 @@ class LSPClient {
   }
 }
 
-const ZERO_BASED = "(uses 0-based indexing, so make sure to subract 1 from the line and character numbers in the file)";
 
 // Schema definitions
 const GetInfoOnLocationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.number().describe(`Line number ${ZERO_BASED}`),
-  character: z.number().describe(`Character position ${ZERO_BASED}`),
+  line: z.number().describe(`Line number`),
+  character: z.number().describe(`Character position`),
 });
 
 const GetCompletionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
-  line: z.number().describe(`Line number ${ZERO_BASED}`),
-  character: z.number().describe(`Character position ${ZERO_BASED}`),
+  line: z.number().describe(`Line number`),
+  character: z.number().describe(`Character position`),
 });
 
 const GetCodeActionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
-  start_line: z.number().describe(`Start line number ${ZERO_BASED}`),
-  start_character: z.number().describe(`Start character position ${ZERO_BASED}`),
-  end_line: z.number().describe(`End line number ${ZERO_BASED}`),
-  end_character: z.number().describe(`End character position ${ZERO_BASED}`),
+  start_line: z.number().describe(`Start line number`),
+  start_character: z.number().describe(`Start character position`),
+  end_line: z.number().describe(`End line number`),
+  end_character: z.number().describe(`End character position`),
 });
 
 const RestartLSPServerArgsSchema = z.object({
@@ -658,8 +657,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         // Get information at the location
         const text = await lspClient.getInfoOnLocation(fileUri, {
-          line: parsed.data.line,
-          character: parsed.data.character
+          line: parsed.data.line - 1, // LSP is 0-based
+          character: parsed.data.character - 1
         });
 
         console.log(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
@@ -693,8 +692,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         // Get completions at the location
         const completions = await lspClient.getCompletion(fileUri, {
-          line: parsed.data.line,
-          character: parsed.data.character
+          line: parsed.data.line - 1, // LSP is 0-based
+          character: parsed.data.character - 1
         });
 
         console.log(`Returned ${completions.length} completions`);
@@ -729,12 +728,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Get code actions for the range
         const codeActions = await lspClient.getCodeActions(fileUri, {
           start: {
-            line: parsed.data.start_line,
-            character: parsed.data.start_character
+            line: parsed.data.start_line - 1, // LSP is 0-based
+            character: parsed.data.start_character - 1
           },
           end: {
-            line: parsed.data.end_line,
-            character: parsed.data.end_character
+            line: parsed.data.end_line - 1,
+            character: parsed.data.end_character - 1
           }
         });
 
