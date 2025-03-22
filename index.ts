@@ -553,7 +553,7 @@ class LSPClient {
     }
   }
 
-  async openDocument(uri: string, text: string, languageId: string = "haskell"): Promise<void> {
+  async openDocument(uri: string, text: string, languageId: string): Promise<void> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
       throw new Error("LSP client not initialized. Please call start_lsp first.");
@@ -1430,7 +1430,10 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         // Get the query parameters
         const lineParam = hoverUri.searchParams.get('line');
         const characterParam = hoverUri.searchParams.get('character');
-        const languageId = hoverUri.searchParams.get('language_id') || "haskell"; // Default to haskell if not specified
+        const languageId = hoverUri.searchParams.get('language_id');
+        if (!languageId) {
+          throw new Error("language_id parameter is required for lsp-hover URI");
+        }
 
         if (!filePath || !lineParam || !characterParam) {
           throw new Error("Invalid lsp-hover URI. Required parameters: file_path, line, character");
@@ -1494,7 +1497,10 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         // Get the query parameters
         const lineParam = completionsUri.searchParams.get('line');
         const characterParam = completionsUri.searchParams.get('character');
-        const languageId = completionsUri.searchParams.get('language_id') || "haskell"; // Default to haskell if not specified
+        const languageId = completionsUri.searchParams.get('language_id');
+        if (!languageId) {
+          throw new Error("language_id parameter is required for lsp-completions URI");
+        }
 
         if (!filePath || !lineParam || !characterParam) {
           throw new Error("Invalid lsp-completions URI. Required parameters: file_path, line, character");
@@ -1742,7 +1748,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
         // We don't add specific hover resources since they require line/character coordinates
         // which are not known until the client requests them
         resources.push({
-          uri: `lsp-hover://${filePath}?line={line}&character={character}&language_id=haskell`,
+          uri: `lsp-hover://${filePath}?line={line}&character={character}&language_id={language_id}`,
           name: `Hover for ${fileName}`,
           description: `LSP hover information template for ${fileName}`,
           subscribe: false,
@@ -1751,7 +1757,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 
         // Add completions resource template
         resources.push({
-          uri: `lsp-completions://${filePath}?line={line}&character={character}&language_id=haskell`,
+          uri: `lsp-completions://${filePath}?line={line}&character={character}&language_id={language_id}`,
           name: `Completions for ${fileName}`,
           description: `LSP code completion suggestions template for ${fileName}`,
           subscribe: false,
