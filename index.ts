@@ -10,12 +10,15 @@ import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
   SetLevelRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import * as fsSync from "fs";
 
 import { LSPClient } from "./src/lspClient.js";
 import { debug, info, notice, warning, logError, critical, alert, emergency, setLogLevel, setServer } from "./src/logging/index.js";
 import { getToolHandlers, getToolDefinitions } from "./src/tools/index.js";
+import { getPromptHandlers, getPromptDefinitions } from "./src/prompts/index.js";
 import { 
   getResourceHandlers, 
   getSubscriptionHandlers, 
@@ -77,6 +80,9 @@ const server = new Server(
       resources: {
         description: "URI-based access to Language Server Protocol (LSP) features. These resources provide a way to access language-specific features like diagnostics, hover information, and completions through a URI pattern. Before using these resources, you must first call the start_lsp tool with the project root directory, then open the files you wish to analyze using the open_document tool.",
         templates: getResourceTemplates()
+      },
+      prompts: {
+        description: "Helpful prompts related to using the LSP MCP server. These prompts provide guidance on how to use the LSP features and tools available in this server."
       },
       logging: {
         description: "Logging capabilities for the LSP MCP server. Use the set_log_level tool to control logging verbosity. The server sends notifications about important events, errors, and diagnostic updates."
@@ -246,6 +252,47 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       isError: true,
       error: errorMessage
     };
+  }
+});
+
+// Prompt listing handler
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  try {
+    debug("Handling ListPrompts request");
+    return {
+      prompts: getPromptDefinitions(),
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logError(`Error handling list prompts request: ${errorMessage}`);
+    return {
+      prompts: [],
+      isError: true,
+      error: errorMessage
+    };
+  }
+});
+
+// Get prompt handler
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  try {
+    const { name, arguments: args } = request.params;
+    debug(`Handling GetPrompt request for prompt: ${name}`);
+
+    // Get the prompt handlers
+    const promptHandlers = getPromptHandlers();
+    const promptHandler = promptHandlers[name];
+    
+    if (!promptHandler) {
+      throw new Error(`Unknown prompt: ${name}`);
+    }
+
+    // Call the handler with the arguments
+    return await promptHandler(args);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logError(`Error handling get prompt request: ${errorMessage}`);
+    throw new Error(`Error handling get prompt request: ${errorMessage}`);
   }
 });
 

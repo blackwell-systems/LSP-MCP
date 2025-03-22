@@ -40,6 +40,27 @@ export type SubscriptionHandler = (uri: string) => Promise<{ ok: boolean, contex
 // Unsubscription handler type
 export type UnsubscriptionHandler = (uri: string, context: any) => Promise<{ ok: boolean, error?: string }>;
 
+// Prompt types
+export interface Prompt {
+  name: string;
+  description: string;
+  arguments?: Array<{
+    name: string;
+    description: string;
+    required: boolean;
+  }>;
+}
+
+export type PromptHandler = (args?: Record<string, string>) => Promise<{
+  messages: Array<{
+    role: string;
+    content: {
+      type: string;
+      text: string;
+    };
+  }>;
+}>;
+
 // Schema definitions
 export const GetInfoOnLocationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
