@@ -41,7 +41,7 @@ parseLSPOpts =
 lspVersion :: T.Text
 lspVersion = "0.1.0.0"
 
--- | The ghc-mcp Language Server Protocol (LSP) server. Currently, it only supports completions.
+-- | The lsp-mcp Language Server Protocol (LSP) server as a demo
 main :: IO ()
 main = do
   -- Parse command line options
@@ -50,17 +50,17 @@ main = do
       info
         (parseLSPOpts <**> helper)
         ( fullDesc
-            <> progDesc "ghc-mcp Language Server Protocol (LSP) server"
-            <> header "ghc-mcp-lsp - LSP server for ghc-mcp language"
+            <> progDesc "simple Language Server Protocol (LSP) server"
+            <> header "mcp-lsp - LSP server for simple language"
         )
 
   -- Check if we should print the version and exit
   when (opt_version opts) $ do
-    TIO.putStrLn ("ghc-mcp-lsp " <> lspVersion)
+    TIO.putStrLn ("mcp-lsp " <> lspVersion)
     exitSuccess
 
   -- Set up logging. These can be viewed in your editor's LSP log.
-  Logger.updateGlobalLogger "ghc-mcp-lsp" (Logger.setLevel Logger.INFO)
+  Logger.updateGlobalLogger "mcp-lsp" (Logger.setLevel Logger.INFO)
 
   -- Run the server
   void $
@@ -89,7 +89,7 @@ main = do
                       (Just $ LSP.InL False) -- do not include the document in the save notification
               }
         , parseConfig = const $ pure $ Right ()
-        , configSection = "ghc-mcp"
+        , configSection = "simple"
         }
 
 -- | A simple completion item with no additional information
@@ -120,13 +120,13 @@ simpleCompletion pos label t =
 
 newtype LSPState = StateT LSP.VFS
 
--- | The handlers for the ghc-mcp LSP server
+-- | The handlers for the simple LSP server
 handlers :: Handlers (StateT LSP.VFS (LspM ()))
 handlers =
   mconcat
     -- Run when the server starts
     [ LSP.notificationHandler LSP.SMethod_Initialized $ const $ do
-        liftIO $ Logger.infoM "ghc-mcp-lsp" "Server initialized!"
+        liftIO $ Logger.infoM "mcp-lsp" "Server initialized!"
     , -- These are required to keep the VFS synced, allowing us to do completions even if
       -- the file has not been saved.
       LSP.notificationHandler LSP.SMethod_TextDocumentDidOpen (LSP.openVFS mempty)
@@ -134,10 +134,10 @@ handlers =
     , LSP.notificationHandler LSP.SMethod_TextDocumentDidClose (LSP.closeVFS mempty)
     , -- Run when the configuration changes. We don't do any configuration yet, but we could.
       LSP.notificationHandler LSP.SMethod_WorkspaceDidChangeConfiguration $ \_ -> do
-        liftIO $ Logger.infoM "ghc-mcp-lsp" "Configuration changed!"
+        liftIO $ Logger.infoM "mcp-lsp" "Configuration changed!"
     , -- TODO: we should probably update the VFS here, i.e. if the files change on disk
       LSP.notificationHandler LSP.SMethod_WorkspaceDidChangeWatchedFiles $ \_ -> do
-        liftIO $ Logger.infoM "ghc-mcp-lsp" "Watched files changed!"
+        liftIO $ Logger.infoM "mcp-lsp" "Watched files changed!"
     , -- The hover functionality
       LSP.requestHandler LSP.SMethod_TextDocumentHover $ \req responder -> do
         let no_resp = responder $ Right $ LSP.InR LSP.Null -- no hover information
@@ -169,10 +169,10 @@ handlers =
                 let toFullSugg c = simpleCompletion pos tc <$> T.stripPrefix pos_word tc
                       where
                         tc = T.pack c
-                completions <- return [T.unpack $ pos_word]
+                completions <- return [T.unpack $ pos_word] -- Here we would generate completionss
                 responder $ Right $ LSP.InL $ mapMaybe toFullSugg completions
               Just _ -> do
-                liftIO $ Logger.errorM "ghc-mcp-lsp" "Invalid position"
+                liftIO $ Logger.errorM "mcp-lsp" "Invalid position"
                 responder $ Right $ LSP.InL []
     ]
 

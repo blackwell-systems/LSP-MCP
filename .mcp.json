@@ -1,14 +1,14 @@
 {
   "mcpServers": {
-    "ghc-mcp": {
+    "lsp-mcp": {
       "type": "stdio",
       "command": "node",
       "args": [
-        "/home/tritlo/Code/GhcMCP/dist/index.js",
-        "/home/tritlo/Code/GhcMCP/dist-newstyle/build/x86_64-linux/ghc-9.6.6/ghc-mcp-0.1.0.0/x/ghc-mcp/build/ghc-mcp/ghc-mcp"
+        "./dist/index.js",
+        "./dist-newstyle/build/x86_64-linux/ghc-9.6.6/ghc-mcp-0.1.0.0/x/ghc-mcp/build/ghc-mcp/ghc-mcp"
       ],
       "env": {
-        "GHCMCPLOGFILE": "/home/tritlo/Code/GhcMCP/ghc-mcp.log"
+        "LSP_MCP_LOG": "./lsp-mcp.log"
       }
     }
   }

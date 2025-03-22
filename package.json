@@ -1,11 +1,11 @@
 {
-  "name": "ghc-mcp-server",
+  "name": "lsp-mcp-server",
   "version": "0.1.0",
-  "description": "MCP server for GHC typed-hole information",
+  "description": "MCP server for LSP Hover and Completions",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "ghc-mcp-server": "dist/index.js"
+    "lsp-mcp-server": "dist/index.js"
   },
   "files": [
     "dist"

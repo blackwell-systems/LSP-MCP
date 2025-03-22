@@ -15,7 +15,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 // Set up logging
-const logFilePath = process.env.GHCMCPLOGFILE;
+const logFilePath = process.env.LSP_MCP_LOG;
 let logStream: fsSync.WriteStream | null = null;
 
 if (logFilePath) {
@@ -25,7 +25,7 @@ if (logFilePath) {
 
     // Add timestamp to log entries
     const timestamp = new Date().toISOString();
-    logStream.write(`\n[${timestamp}] GHC MCP Server started\n`);
+    logStream.write(`\n[${timestamp}] LSP MCP Server started\n`);
   } catch (error) {
     console.error(`Error opening log file ${logFilePath}:`, error);
   }
@@ -229,7 +229,7 @@ class LSPClient {
       await this.sendRequest("initialize", {
         processId: process.pid,
         clientInfo: {
-          name: "ghc-mcp-server"
+          name: "lsp-mcp-server"
         },
         rootUri: "file://" + path.resolve("."),
         capabilities: {
@@ -339,12 +339,14 @@ class LSPClient {
 // Schema definitions
 const GetInfoOnLocationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
+  language_id: z.string().describe("The programming language the file is written in"),
   line: z.number().describe("Line number (0-based)"),
   character: z.number().describe("Character position (0-based)"),
 });
 
 const GetCompletionsArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
+  language_id: z.string().describe("The programming language the file is written in"),
   line: z.number().describe("Line number (0-based)"),
   character: z.number().describe("Character position (0-based)"),
 });
@@ -362,9 +364,9 @@ lspClient.initialize().catch(error => {
 // Server setup
 const server = new Server(
   {
-    name: "ghc-lsp-server",
+    name: "lsp-mcp-server",
     version: "0.1.0",
-    description: "MCP server for GHC typed-hole information via LSP"
+    description: "MCP server for Hover and Completions via LSP"
   },
   {
     capabilities: {
@@ -413,7 +415,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
 
         // Open the document in the LSP server
-        await lspClient.openDocument(fileUri, fileContent);
+        await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
 
         // Get information at the location
         const text = await lspClient.getInfoOnLocation(fileUri, {
@@ -446,7 +448,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
 
         // Open the document in the LSP server
-        await lspClient.openDocument(fileUri, fileContent);
+        await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
 
         // Get completions at the location
         const completions = await lspClient.getCompletion(fileUri, {
@@ -488,7 +490,7 @@ process.on('exit', async () => {
 
   if (logStream) {
     const timestamp = new Date().toISOString();
-    logStream.write(`[${timestamp}] GHC MCP Server exited\n`);
+    logStream.write(`[${timestamp}] LSP MCP Server exited\n`);
     logStream.end();
   }
 });
@@ -501,10 +503,10 @@ process.on('uncaughtException', (error) => {
 
 // Start server
 async function runServer() {
-  console.log("Starting GHC MCP Server...");
+  console.log("Starting LSP MCP Server...");
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log("GHC MCP Server running on stdio");
+  console.log("LSP MCP Server running on stdio");
   console.log("Using LSP server:", lspServerPath);
   if (logFilePath) {
     console.log(`Logging to file: ${logFilePath}`);
