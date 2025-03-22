@@ -28,7 +28,13 @@ const originalConsoleWarn = console.warn;
 const originalConsoleError = console.error;
 
 // Current log level - can be changed at runtime
-let logLevel: LoggingLevel = 'info';  // Default to 'info' instead of 'debug'
+// Initialize with default or from environment variable
+let logLevel: LoggingLevel = (process.env.LOG_LEVEL as LoggingLevel) || 'debug';
+
+// Validate that the log level is valid, default to 'debug' if not
+if (!['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'].includes(logLevel)) {
+  logLevel = 'debug';
+}
 
 // Map of log levels and their priorities (higher number = higher priority)
 const LOG_LEVEL_PRIORITY: Record<LoggingLevel, number> = {
@@ -50,19 +56,20 @@ const shouldLog = (level: LoggingLevel): boolean => {
 // Core logging function
 const log = (level: LoggingLevel, ...args: any[]): void => {
   if (!shouldLog(level)) return;
-  
+
   const timestamp = new Date().toISOString();
   const message = args.map(arg =>
     typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
   ).join(' ');
-  
+
   // Format for console output with color coding
   let consoleMethod = originalConsoleLog; // Use original methods to prevent recursion
   let consolePrefix = '';
-  
+
   switch(level) {
     case 'debug':
       consolePrefix = '\x1b[90m[DEBUG]\x1b[0m'; // Gray
+      consoleMethod = originalConsoleWarn || originalConsoleLog;
       break;
     case 'info':
       consolePrefix = '\x1b[36m[INFO]\x1b[0m'; // Cyan
@@ -91,9 +98,9 @@ const log = (level: LoggingLevel, ...args: any[]): void => {
       consoleMethod = originalConsoleError;
       break;
   }
-  
+
   consoleMethod(`${consolePrefix} ${message}`);
-  
+
   // Send notification to MCP client if server is available and initialized
   if (server && typeof server.notification === 'function') {
     try {
@@ -122,10 +129,17 @@ const critical = (...args: any[]): void => log('critical', ...args);
 const alert = (...args: any[]): void => log('alert', ...args);
 const emergency = (...args: any[]): void => log('emergency', ...args);
 
-// Set log level function - defined after log function to avoid circular references 
+// Set log level function - defined after log function to avoid circular references
 const setLogLevel = (level: LoggingLevel): void => {
+  const oldLevel = logLevel;
   logLevel = level;
-  log('info', `Log level set to: ${level}`);
+
+  // Always log this message regardless of the new log level
+  // Use notice level to ensure it's visible
+  originalConsoleLog(`\x1b[32m[NOTICE]\x1b[0m Log level changed from ${oldLevel} to ${level}`);
+
+  // Also log through standard channels
+  log('notice', `Log level set to: ${level}`);
 };
 
 
@@ -139,7 +153,7 @@ console.log = function(...args) {
     originalConsoleLog(...args);
     return;
   }
-  
+
   isLogging = true;
   info(...args);
   isLogging = false;
@@ -151,7 +165,7 @@ console.warn = function(...args) {
     originalConsoleWarn(...args);
     return;
   }
-  
+
   isLogging = true;
   warning(...args);
   isLogging = false;
@@ -163,7 +177,7 @@ console.error = function(...args) {
     originalConsoleError(...args);
     return;
   }
-  
+
   isLogging = true;
   logError(...args);
   isLogging = false;
@@ -356,9 +370,9 @@ class LSPClient {
         const { uri, diagnostics } = message.params;
 
         if (uri && Array.isArray(diagnostics)) {
-          const severity = diagnostics.length > 0 ? 
+          const severity = diagnostics.length > 0 ?
             Math.min(...diagnostics.map(d => d.severity || 4)) : 4;
-          
+
           // Map LSP severity to our log levels
           const severityToLevel: Record<number, LoggingLevel> = {
             1: 'error',      // Error
@@ -366,9 +380,9 @@ class LSPClient {
             3: 'info',       // Information
             4: 'debug'       // Hint
           };
-          
+
           const level = severityToLevel[severity] || 'debug';
-          
+
           log(level, `Received ${diagnostics.length} diagnostics for ${uri}`);
 
           // Store diagnostics, replacing any previous ones for this URI
@@ -386,16 +400,16 @@ class LSPClient {
     if (method.startsWith('textDocument/did')) {
       return 'debug'; // Document changes are usually debug level
     }
-    
+
     if (method.includes('diagnostic') || method.includes('publishDiagnostics')) {
       return 'info'; // Diagnostics depend on their severity, but base level is info
     }
-    
-    if (method === 'initialize' || method === 'initialized' || 
+
+    if (method === 'initialize' || method === 'initialized' ||
         method === 'shutdown' || method === 'exit') {
       return 'notice'; // Important lifecycle events are notice level
     }
-    
+
     // Default to debug level for most LSP operations
     return 'debug';
   }
@@ -460,7 +474,7 @@ class LSPClient {
       console.error("LSP process not started. Please call start_lsp first.");
       return;
     }
-    
+
     const notification: LSPMessage = {
       jsonrpc: "2.0",
       method,
@@ -491,7 +505,7 @@ class LSPClient {
       if (!this.process) {
         this.startProcess();
       }
-      
+
       info("Initializing LSP connection...");
       await this.sendRequest("initialize", {
         processId: process.pid,
@@ -1308,13 +1322,13 @@ process.on('exit', async () => {
 // Log uncaught exceptions
 process.on('uncaughtException', (error) => {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  
+
   // Don't exit for "Not connected" errors during startup
   if (errorMessage === 'Not connected') {
     warning(`Uncaught exception (non-fatal): ${errorMessage}`, error);
     return;
   }
-  
+
   critical(`Uncaught exception: ${errorMessage}`, error);
   // Exit with status code 1 to indicate error
   process.exit(1);
@@ -1372,58 +1386,58 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         content: [{ type: "text", text: diagnosticsContent }],
       };
     }
-    
+
     // Parse the lsp-hover URI
     if (uri.startsWith('lsp-hover://')) {
       // Check if LSP client is initialized
       if (!lspClient) {
         throw new Error("LSP server not started. Call start_lsp first with a root directory.");
       }
-      
+
       try {
         // Extract parameters from URI
         // Format: lsp-hover://{file_path}?line={line}&character={character}&language_id={language_id}
         const hoverUri = new URL(uri);
-        
+
         // Get the file path (remove the leading lsp-hover:// protocol part)
         const filePath = hoverUri.pathname.slice(2); // Skip the '//' part
-        
+
         // Get the query parameters
         const lineParam = hoverUri.searchParams.get('line');
         const characterParam = hoverUri.searchParams.get('character');
         const languageId = hoverUri.searchParams.get('language_id') || "haskell"; // Default to haskell if not specified
-        
+
         if (!filePath || !lineParam || !characterParam) {
           throw new Error("Invalid lsp-hover URI. Required parameters: file_path, line, character");
         }
-        
+
         // Parse line and character as numbers
         const line = parseInt(lineParam, 10);
         const character = parseInt(characterParam, 10);
-        
+
         if (isNaN(line) || isNaN(character)) {
           throw new Error("Line and character must be valid numbers");
         }
-        
+
         debug(`Getting hover info for ${filePath} at line ${line}, character ${character}`);
-        
+
         // Read the file content
         const fileContent = await fs.readFile(filePath, 'utf-8');
-        
+
         // Create a file URI
         const fileUri = `file://${path.resolve(filePath)}`;
-        
+
         // Open the document in the LSP server (won't reopen if already open)
         await lspClient.openDocument(fileUri, fileContent, languageId);
-        
+
         // Get information at the location (LSP is 0-based)
         const hoverText = await lspClient.getInfoOnLocation(fileUri, {
           line: line - 1,
           character: character - 1
         });
-        
+
         debug(`Got hover information: ${hoverText.slice(0, 100)}${hoverText.length > 100 ? '...' : ''}`);
-        
+
         return {
           content: [{ type: "text", text: hoverText }],
         };
@@ -1433,58 +1447,58 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         throw new Error(`Error processing hover request: ${errorMessage}`);
       }
     }
-    
+
     // Parse the lsp-completions URI
     if (uri.startsWith('lsp-completions://')) {
       // Check if LSP client is initialized
       if (!lspClient) {
         throw new Error("LSP server not started. Call start_lsp first with a root directory.");
       }
-      
+
       try {
         // Extract parameters from URI
         // Format: lsp-completions://{file_path}?line={line}&character={character}&language_id={language_id}
         const completionsUri = new URL(uri);
-        
+
         // Get the file path (remove the leading lsp-completions:// protocol part)
         const filePath = completionsUri.pathname.slice(2); // Skip the '//' part
-        
+
         // Get the query parameters
         const lineParam = completionsUri.searchParams.get('line');
         const characterParam = completionsUri.searchParams.get('character');
         const languageId = completionsUri.searchParams.get('language_id') || "haskell"; // Default to haskell if not specified
-        
+
         if (!filePath || !lineParam || !characterParam) {
           throw new Error("Invalid lsp-completions URI. Required parameters: file_path, line, character");
         }
-        
+
         // Parse line and character as numbers
         const line = parseInt(lineParam, 10);
         const character = parseInt(characterParam, 10);
-        
+
         if (isNaN(line) || isNaN(character)) {
           throw new Error("Line and character must be valid numbers");
         }
-        
+
         debug(`Getting completions for ${filePath} at line ${line}, character ${character}`);
-        
+
         // Read the file content
         const fileContent = await fs.readFile(filePath, 'utf-8');
-        
+
         // Create a file URI
         const fileUri = `file://${path.resolve(filePath)}`;
-        
+
         // Open the document in the LSP server (won't reopen if already open)
         await lspClient.openDocument(fileUri, fileContent, languageId);
-        
+
         // Get completions at the location (LSP is 0-based)
         const completions = await lspClient.getCompletion(fileUri, {
           line: line - 1,
           character: character - 1
         });
-        
+
         debug(`Got ${completions.length} completions`);
-        
+
         return {
           content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
         };
@@ -1646,10 +1660,10 @@ server.setRequestHandler(SetLevelRequestSchema, async (request) => {
   try {
     const { level } = request.params;
     debug(`Received request to set log level to: ${level}`);
-    
+
     // Set the log level
     setLogLevel(level);
-    
+
     return {};
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1687,7 +1701,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       if (uri.startsWith('file://')) {
         const filePath = uri.slice(7); // Remove 'file://' prefix
         const fileName = path.basename(filePath);
-        
+
         // Add diagnostics resource
         resources.push({
           uri: `lsp-diagnostics://${filePath}`,
@@ -1695,7 +1709,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
           description: `LSP diagnostics for ${filePath}`,
           subscribe: true,
         });
-        
+
         // Add hover resource template
         // We don't add specific hover resources since they require line/character coordinates
         // which are not known until the client requests them
@@ -1706,7 +1720,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
           subscribe: false,
           template: true,
         });
-        
+
         // Add completions resource template
         resources.push({
           uri: `lsp-completions://${filePath}?line={line}&character={character}&language_id=haskell`,
@@ -1732,7 +1746,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 
 // Start server
 async function runServer() {
-  info("Starting LSP MCP Server...");
+  notice(`Starting LSP MCP Server with log level: ${logLevel}`);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   notice("LSP MCP Server running on stdio");

@@ -67,6 +67,36 @@ For the demo server:
    npm run build
    ```
 
+## Testing
+
+The project includes integration tests for the TypeScript LSP support. These tests verify that the LSP-MCP server correctly handles LSP operations like hover information, completions, diagnostics, and code actions.
+
+### Running Tests
+
+To run the TypeScript LSP tests:
+
+```
+npm test
+```
+
+or specifically:
+
+```
+npm run test:typescript
+```
+
+### Test Coverage
+
+The tests verify the following functionality:
+- Initializing the TypeScript LSP with a mock project
+- Opening TypeScript files for analysis
+- Getting hover information for functions and types
+- Getting code completion suggestions
+- Getting diagnostic error messages
+- Getting code actions for errors
+
+The test project is located in `test/ts-project/` and contains TypeScript files with intentional errors to test diagnostic feedback.
+
 ## Usage
 
 Run the MCP server by providing the path to the LSP executable and any arguments to pass to the LSP server:
