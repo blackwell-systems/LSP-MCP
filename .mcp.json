@@ -1,16 +1,22 @@
 {
   "mcpServers": {
-    "lsp-mcp": {
+    "haskell-lsp": {
       "type": "stdio",
       "command": "node",
       "args": [
         "./dist/index.js",
         "/home/tritlo/.ghcup/bin/haskell-language-server-wrapper",
         "lsp"
-      ],
-      "env": {
-        "LSP_MCP_LOG": "./lsp-mcp.log"
-      }
+      ]
+    },
+    "typescript-lsp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "./dist/index.js",
+        "/home/tritlo/.npm-global/bin/typescript-language-server",
+        "--stdio"
+      ]
     }
   }
 }
