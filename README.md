@@ -13,6 +13,26 @@ The MCP Server works by:
 This enables LLMs to utilize LSPs for more accurate code suggestions.
 
 
+## Configuration:
+
+```json
+{
+  "mcpServers": {
+    "lsp-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "tritlo/lsp-mcp",
+        "<language-id>",
+        "<path-to-lsp>",
+        "<lsp-args>"
+      ]
+    }
+  }
+}
+```
+
+
 ## Features
 
 ### MCP Tools
@@ -431,24 +451,6 @@ You can choose between two approaches for accessing LSP features:
 
 Both approaches provide the same data in the same format and enforce the same requirement that files must be opened first.
 
-## Configuration:
-
-```json
-{
-  "mcpServers": {
-    "lsp-mcp": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "tritlo/lsp-mcp",
-        "<language-id>",
-        "<path-to-lsp>",
-        "<lsp-args>"
-      ]
-    }
-  }
-}
-```
 
 ## Troubleshooting
 
