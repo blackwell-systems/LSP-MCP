@@ -318,6 +318,9 @@ class LSPClient {
               completionItem: {
                 snippetSupport: false
               }
+            },
+            codeAction: {
+              dynamicRegistration: true
             }
           }
         }
@@ -427,6 +430,30 @@ class LSPClient {
     return [];
   }
 
+  async getCodeActions(uri: string, range: { start: { line: number, character: number }, end: { line: number, character: number } }): Promise<any[]> {
+    await this.initialize();
+
+    console.log(`Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`);
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/codeAction", {
+        textDocument: { uri },
+        range,
+        context: {
+          diagnostics: []
+        }
+      });
+
+      if (Array.isArray(response)) {
+        return response;
+      }
+    } catch (error) {
+      console.error(`Error getting code actions: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return [];
+  }
+
   async shutdown(): Promise<void> {
     if (!this.initialized) return;
 
@@ -496,19 +523,30 @@ class LSPClient {
   }
 }
 
+const ZERO_BASED = "(uses 0-based indexing, so make sure to subract 1 from the line and character numbers in the file)";
+
 // Schema definitions
 const GetInfoOnLocationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.number().describe("Line number (uses 0-based indexing)"),
-  character: z.number().describe("Character position (uses 0-based indexing)"),
+  line: z.number().describe(`Line number ${ZERO_BASED}`),
+  character: z.number().describe(`Character position ${ZERO_BASED}`),
 });
 
 const GetCompletionsArgsSchema = z.object({
-  file_path: z.string().describe("Path to the file"),
-  language_id: z.string().describe("The programming language the file is written in"),
-  line: z.number().describe("Line number (uses 0-based indexing)"),
-  character: z.number().describe("Character position (uses 0-based indexing)"),
+  file_path: z.string().describe(`Path to the file`),
+  language_id: z.string().describe(`The programming language the file is written in`),
+  line: z.number().describe(`Line number ${ZERO_BASED}`),
+  character: z.number().describe(`Character position ${ZERO_BASED}`),
+});
+
+const GetCodeActionsArgsSchema = z.object({
+  file_path: z.string().describe(`Path to the file`),
+  language_id: z.string().describe(`The programming language the file is written in`),
+  start_line: z.number().describe(`Start line number ${ZERO_BASED}`),
+  start_character: z.number().describe(`Start character position ${ZERO_BASED}`),
+  end_line: z.number().describe(`End line number ${ZERO_BASED}`),
+  end_character: z.number().describe(`End character position ${ZERO_BASED}`),
 });
 
 const RestartLSPServerArgsSchema = z.object({});
@@ -551,6 +589,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "get_completions",
         description: "Get completion suggestions at a specific location in a file",
         inputSchema: zodToJsonSchema(GetCompletionsArgsSchema) as ToolInput,
+      },
+      {
+        name: "get_code_actions",
+        description: "Get code actions for a specific range in a file",
+        inputSchema: zodToJsonSchema(GetCodeActionsArgsSchema) as ToolInput,
       },
       {
         name: "restart_lsp_server",
@@ -624,6 +667,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         return {
           content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
+        };
+      }
+      
+      case "get_code_actions": {
+        const parsed = GetCodeActionsArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments for get_code_actions: ${parsed.error}`);
+        }
+
+        console.log(`Getting code actions in file: ${parsed.data.file_path} (${parsed.data.start_line}:${parsed.data.start_character} to ${parsed.data.end_line}:${parsed.data.end_character})`);
+
+        // Read the file content
+        const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
+
+        // Create a file URI
+        const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
+
+        // Open the document in the LSP server (won't reopen if already open)
+        await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
+
+        // Get code actions for the range
+        const codeActions = await lspClient.getCodeActions(fileUri, {
+          start: {
+            line: parsed.data.start_line,
+            character: parsed.data.start_character
+          },
+          end: {
+            line: parsed.data.end_line,
+            character: parsed.data.end_character
+          }
+        });
+
+        console.log(`Returned ${codeActions.length} code actions`);
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(codeActions, null, 2) }],
         };
       }
 
