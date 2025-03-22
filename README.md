@@ -1,11 +1,11 @@
 # LSP MCP Server
 
-An MCP (Model Context Protocol) server for interacting with  LSP (Language Server Protocol) interface.
-This server acts as a bridge that allows LLMs to query an LSP Hover and Completion providers.
+An MCP (Model Context Protocol) server for interacting with LSP (Language Server Protocol) interface.
+This server acts as a bridge that allows LLMs to query LSP Hover and Completion providers.
 
 ## Overview
 
-The  MCP Server works by:
+The MCP Server works by:
 1. Starting an LSP client that connects to a LSP server
 2. Exposing MCP tools that send requests to the LSP server
 3. Returning the results in a format that LLMs can understand and use
@@ -460,6 +460,52 @@ Both approaches provide the same data in the same format and enforce the same re
 MIT License
 
 
+
+## Extensions
+
+The LSP-MCP server supports language-specific extensions that enhance its capabilities for different programming languages. Extensions can provide:
+
+- Custom LSP-specific tools and functionality
+- Language-specific resource handlers and templates
+- Specialized prompts for language-related tasks
+- Custom subscription handlers for real-time data
+
+### Available Extensions
+
+Currently, the following extensions are available:
+
+- **Haskell**: Provides specialized prompts for Haskell development, including typed-hole exploration guidance
+
+### Using Extensions
+
+Extensions are loaded automatically when you specify a language ID when starting the server:
+
+```
+npx tritlo/lsp-mcp haskell /path/to/haskell-language-server-wrapper lsp
+```
+
+### Extension Namespacing
+
+All extension-provided features are namespaced with the language ID. For example, the Haskell extension's typed-hole prompt is available as `haskell.typed-hole-use`.
+
+### Creating New Extensions
+
+To create a new extension:
+
+1. Create a new TypeScript file in `src/extensions/` named after your language (e.g., `typescript.ts`)
+2. Implement the Extension interface with any of these optional functions:
+   - `getToolHandlers()`: Provide custom tool implementations
+   - `getToolDefinitions()`: Define custom tools in the MCP API
+   - `getResourceHandlers()`: Implement custom resource handlers
+   - `getSubscriptionHandlers()`: Implement custom subscription handlers
+   - `getUnsubscriptionHandlers()`: Implement custom unsubscription handlers
+   - `getResourceTemplates()`: Define custom resource templates
+   - `getPromptDefinitions()`: Define custom prompts for language tasks
+   - `getPromptHandlers()`: Implement custom prompt handlers
+
+3. Export your implementation functions
+
+The extension system will automatically load your extension when the matching language ID is specified.
 
 ## Acknowledgments
 
