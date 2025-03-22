@@ -124,7 +124,7 @@ class LSPClient {
   constructor(lspServerPath: string, lspServerArgs: string[] = []) {
     this.lspServerPath = lspServerPath;
     this.lspServerArgs = lspServerArgs;
-    this.startProcess();
+    // Don't start the process automatically - it will be started when needed
   }
 
   private startProcess(): void {
@@ -263,6 +263,11 @@ class LSPClient {
   }
 
   private sendRequest<T>(method: string, params?: any): Promise<T> {
+    // Check if the process is started
+    if (!this.process) {
+      return Promise.reject(new Error("LSP process not started. Please call start_lsp first."));
+    }
+
     const id = this.nextId++;
     const request: LSPMessage = {
       jsonrpc: "2.0",
@@ -310,6 +315,12 @@ class LSPClient {
   }
 
   private sendNotification(method: string, params?: any): void {
+    // Check if the process is started
+    if (!this.process) {
+      console.error("LSP process not started. Please call start_lsp first.");
+      return;
+    }
+    
     const notification: LSPMessage = {
       jsonrpc: "2.0",
       method,
@@ -334,6 +345,11 @@ class LSPClient {
     if (this.initialized) return;
 
     try {
+      // Start the process if it hasn't been started yet
+      if (!this.process) {
+        this.startProcess();
+      }
+      
       console.log("Initializing LSP connection...");
       await this.sendRequest("initialize", {
         processId: process.pid,
@@ -1378,10 +1394,10 @@ async function runServer() {
     console.log(`Logging to file: ${logFilePath}`);
   }
 
-  // Create LSP client instance but don't initialize yet
-  // Initialization will happen when start_lsp is called
+  // Create LSP client instance but don't start the process or initialize yet
+  // Both will happen when start_lsp is called
   lspClient = new LSPClient(lspServerPath, lspServerArgs);
-  console.log("LSP client created. Use the start_lsp tool to initialize with a root directory.");
+  console.log("LSP client created. Use the start_lsp tool to start and initialize with a root directory.");
 }
 
 runServer().catch((error) => {
