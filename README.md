@@ -18,8 +18,12 @@ This enables LLMs to utilize LSPs for more accurate code suggestions.
 - `get_info_on_location`: Get hover information at a specific location in a file
 - `get_completions`: Get completion suggestions at a specific location in a file
 - `get_code_actions`: Get code actions for a specific range in a file
+- `open_document`: Open a file in the LSP server for analysis
+- `close_document`: Close a file in the LSP server
+- `get_diagnostics`: Get diagnostic messages (errors, warnings) for open files
 - `start_lsp`: Start the LSP server with a specified root directory
 - `restart_lsp_server`: Restart the LSP server without restarting the MCP server
+- Real-time diagnostic updates via MCP resource subscriptions
 - Detailed logging for debugging and auditing
 - Simple command-line interface
 
@@ -211,6 +215,98 @@ Example with root_dir:
   }
 }
 ```
+
+### open_document
+
+Opens a file in the LSP server for analysis. This must be called before accessing diagnostics or performing other operations on the file.
+
+Parameters:
+- `file_path`: Path to the file to open
+- `language_id`: The programming language the file is written in (e.g., "haskell")
+
+Example:
+```json
+{
+  "tool": "open_document",
+  "arguments": {
+    "file_path": "/path/to/your/file",
+    "language_id": "haskell"
+  }
+}
+```
+
+### close_document
+
+Closes a file in the LSP server when you're done working with it. This helps manage resources and cleanup.
+
+Parameters:
+- `file_path`: Path to the file to close
+
+Example:
+```json
+{
+  "tool": "close_document",
+  "arguments": {
+    "file_path": "/path/to/your/file"
+  }
+}
+```
+
+### get_diagnostics
+
+Gets diagnostic messages (errors, warnings) for one or all open files.
+
+Parameters:
+- `file_path`: (Optional) Path to the file to get diagnostics for. If not provided, returns diagnostics for all open files.
+
+Example for a specific file:
+```json
+{
+  "tool": "get_diagnostics",
+  "arguments": {
+    "file_path": "/path/to/your/file"
+  }
+}
+```
+
+Example for all open files:
+```json
+{
+  "tool": "get_diagnostics",
+  "arguments": {}
+}
+```
+
+## MCP Resources
+
+In addition to tools, the server also provides resources for accessing diagnostics with real-time updates:
+
+### Diagnostic Resources
+
+The server exposes diagnostic information via the `lsp-diagnostics://` resource scheme. These resources can be subscribed to for real-time updates when diagnostics change.
+
+Resource URIs:
+- `lsp-diagnostics://` - Diagnostics for all open files
+- `lsp-diagnostics:///path/to/file` - Diagnostics for a specific file
+
+Important: Files must be opened using the `open_document` tool before diagnostics can be accessed.
+
+### Listing Available Resources
+
+To discover available diagnostic resources, use the MCP `resources/list` endpoint. The response will include all available diagnostics resources for currently open files.
+
+### Subscribing to Diagnostic Updates
+
+To receive real-time updates when diagnostics change (e.g., when files are modified and new errors or warnings appear), subscribe to the diagnostic resources using the MCP `resources/subscribe` endpoint.
+
+### Working with Resources vs. Tools
+
+You can choose between two approaches for accessing diagnostics:
+
+1. Tool-based approach: Use the `get_diagnostics` tool for a simple, direct way to fetch diagnostics.
+2. Resource-based approach: Use the `lsp-diagnostics://` resources for a more RESTful approach that supports real-time updates through subscriptions.
+
+Both approaches provide the same data in the same format and enforce the same requirement that files must be opened first.
 
 ## Configuration:
 

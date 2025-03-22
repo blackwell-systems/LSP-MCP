@@ -5,6 +5,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+  ListResourcesRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
   ToolSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import * as fs from "fs/promises";
@@ -93,6 +97,14 @@ interface LSPMessage {
   error?: any;
 }
 
+// Define a type for diagnostic subscribers
+type DiagnosticUpdateCallback = (uri: string, diagnostics: any[]) => void;
+
+// Define a type for subscription context
+interface SubscriptionContext {
+  callback: DiagnosticUpdateCallback;
+}
+
 class LSPClient {
   private process: any;
   private buffer: string = "";
@@ -106,6 +118,8 @@ class LSPClient {
   private openedDocuments: Set<string> = new Set();
   private documentVersions: Map<string, number> = new Map();
   private processingQueue: boolean = false;
+  private documentDiagnostics: Map<string, any[]> = new Map();
+  private diagnosticSubscribers: Set<DiagnosticUpdateCallback> = new Set();
 
   constructor(lspServerPath: string, lspServerArgs: string[] = []) {
     this.lspServerPath = lspServerPath;
@@ -228,6 +242,24 @@ class LSPClient {
     if ('id' in message && message.result?.capabilities) {
       this.serverCapabilities = message.result.capabilities;
     }
+
+    // Handle notification messages
+    if ('method' in message && message.id === undefined) {
+      // Handle diagnostic notifications
+      if (message.method === 'textDocument/publishDiagnostics' && message.params) {
+        const { uri, diagnostics } = message.params;
+
+        if (uri && Array.isArray(diagnostics)) {
+          console.log(`Received ${diagnostics.length} diagnostics for ${uri}`);
+
+          // Store diagnostics, replacing any previous ones for this URI
+          this.documentDiagnostics.set(uri, diagnostics);
+
+          // Notify all subscribers about this update
+          this.notifyDiagnosticUpdate(uri, diagnostics);
+        }
+      }
+    }
   }
 
   private sendRequest<T>(method: string, params?: any): Promise<T> {
@@ -346,7 +378,7 @@ class LSPClient {
       // Get current version and increment
       const currentVersion = this.documentVersions.get(uri) || 1;
       const newVersion = currentVersion + 1;
-      
+
       console.log(`Document already open, updating content: ${uri} (version ${newVersion})`);
       this.sendNotification("textDocument/didChange", {
         textDocument: {
@@ -359,7 +391,7 @@ class LSPClient {
           }
         ]
       });
-      
+
       // Update version
       this.documentVersions.set(uri, newVersion);
       return;
@@ -379,32 +411,78 @@ class LSPClient {
     this.openedDocuments.add(uri);
     this.documentVersions.set(uri, 1);
   }
-  
+
   // Check if a document is open
   isDocumentOpen(uri: string): boolean {
     return this.openedDocuments.has(uri);
   }
-  
+
+  // Get a list of all open documents
+  getOpenDocuments(): string[] {
+    return Array.from(this.openedDocuments);
+  }
+
   // Close a document
   async closeDocument(uri: string): Promise<void> {
     // Check if initialized
     if (!this.initialized) {
       throw new Error("LSP client not initialized. Please call start_lsp first.");
     }
-    
+
     // Only close if document is open
     if (this.openedDocuments.has(uri)) {
       console.log(`Closing document: ${uri}`);
       this.sendNotification("textDocument/didClose", {
         textDocument: { uri }
       });
-      
+
       // Remove from tracking
       this.openedDocuments.delete(uri);
       this.documentVersions.delete(uri);
     } else {
       console.log(`Document not open: ${uri}`);
     }
+  }
+
+  // Get diagnostics for a file
+  getDiagnostics(uri: string): any[] {
+    return this.documentDiagnostics.get(uri) || [];
+  }
+
+  // Get all diagnostics
+  getAllDiagnostics(): Map<string, any[]> {
+    return new Map(this.documentDiagnostics);
+  }
+
+  // Subscribe to diagnostic updates
+  subscribeToDiagnostics(callback: DiagnosticUpdateCallback): void {
+    this.diagnosticSubscribers.add(callback);
+
+    // Send initial diagnostics for all open documents
+    this.documentDiagnostics.forEach((diagnostics, uri) => {
+      callback(uri, diagnostics);
+    });
+  }
+
+  // Unsubscribe from diagnostic updates
+  unsubscribeFromDiagnostics(callback: DiagnosticUpdateCallback): void {
+    this.diagnosticSubscribers.delete(callback);
+  }
+
+  // Notify all subscribers about diagnostic updates
+  private notifyDiagnosticUpdate(uri: string, diagnostics: any[]): void {
+    this.diagnosticSubscribers.forEach(callback => {
+      try {
+        callback(uri, diagnostics);
+      } catch (error) {
+        console.error("Error in diagnostic subscriber callback:", error);
+      }
+    });
+  }
+
+  // Clear all diagnostic subscribers
+  clearDiagnosticSubscribers(): void {
+    this.diagnosticSubscribers.clear();
   }
 
   async getInfoOnLocation(uri: string, position: { line: number, character: number }): Promise<string> {
@@ -499,6 +577,9 @@ class LSPClient {
     try {
       console.log("Shutting down LSP connection...");
 
+      // Clear all diagnostic subscribers
+      this.clearDiagnosticSubscribers();
+
       // Close all open documents before shutting down
       for (const uri of this.openedDocuments) {
         try {
@@ -552,6 +633,8 @@ class LSPClient {
     this.openedDocuments.clear();
     this.documentVersions.clear();
     this.processingQueue = false;
+    this.documentDiagnostics.clear();
+    this.clearDiagnosticSubscribers();
 
     // Start a new process
     this.startProcess();
@@ -600,6 +683,10 @@ const CloseDocumentArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file to close`),
 });
 
+const GetDiagnosticsArgsSchema = z.object({
+  file_path: z.string().optional().describe(`Path to the file to get diagnostics for. If not provided, returns diagnostics for all open files.`),
+});
+
 const RestartLSPServerArgsSchema = z.object({
   root_dir: z.string().optional().describe("The root directory for the LSP server. If not provided, the server will not be initialized automatically."),
 });
@@ -625,6 +712,17 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {
+        templates: [
+          {
+            name: "lsp-diagnostics",
+            scheme: "lsp-diagnostics",
+            pattern: "lsp-diagnostics://{file_path}",
+            description: "Get diagnostic messages (errors, warnings) for a specific file or all files",
+            subscribe: true,
+          }
+        ]
+      },
     },
   },
 );
@@ -668,6 +766,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "close_document",
         description: "Close a file in the LSP server",
         inputSchema: zodToJsonSchema(CloseDocumentArgsSchema) as ToolInput,
+      },
+      {
+        name: "get_diagnostics",
+        description: "Get diagnostic messages (errors, warnings) for files",
+        inputSchema: zodToJsonSchema(GetDiagnosticsArgsSchema) as ToolInput,
       },
     ],
   };
@@ -748,7 +851,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
         };
       }
-      
+
       case "get_code_actions": {
         const parsed = GetCodeActionsArgsSchema.safeParse(args);
         if (!parsed.success) {
@@ -803,7 +906,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         // Get the root directory from args or use the stored one
         const restartRootDir = parsed.data.root_dir || rootDir;
-        
+
         console.log(`Restarting LSP server${parsed.data.root_dir ? ` with root directory: ${parsed.data.root_dir}` : ''}...`);
 
         try {
@@ -811,16 +914,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (parsed.data.root_dir) {
             rootDir = parsed.data.root_dir;
           }
-          
+
           // Restart with the root directory
           await lspClient.restart(restartRootDir);
-          
+
           return {
-            content: [{ 
-              type: "text", 
-              text: parsed.data.root_dir 
+            content: [{
+              type: "text",
+              text: parsed.data.root_dir
                 ? `LSP server successfully restarted and initialized with root directory: ${parsed.data.root_dir}`
-                : "LSP server successfully restarted" 
+                : "LSP server successfully restarted"
             }],
           };
         } catch (error) {
@@ -829,7 +932,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Failed to restart LSP server: ${errorMessage}`);
         }
       }
-      
+
       case "start_lsp": {
         const parsed = StartLSPArgsSchema.safeParse(args);
         if (!parsed.success) {
@@ -840,15 +943,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         try {
           rootDir = parsed.data.root_dir;
-          
+
           // Create LSP client if it doesn't exist
           if (!lspClient) {
             lspClient = new LSPClient(lspServerPath, lspServerArgs);
           }
-          
+
           // Initialize with the specified root directory
           await lspClient.initialize(rootDir);
-          
+
           return {
             content: [{ type: "text", text: `LSP server successfully started with root directory: ${rootDir}` }],
           };
@@ -881,7 +984,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
           // Open the document in the LSP server
           await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
-          
+
           return {
             content: [{ type: "text", text: `File successfully opened: ${parsed.data.file_path}` }],
           };
@@ -911,7 +1014,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
           // Use the closeDocument method
           await lspClient.closeDocument(fileUri);
-          
+
           return {
             content: [{ type: "text", text: `File successfully closed: ${parsed.data.file_path}` }],
           };
@@ -919,6 +1022,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`Error closing document: ${errorMessage}`);
           throw new Error(`Failed to close document: ${errorMessage}`);
+        }
+      }
+
+      case "get_diagnostics": {
+        const parsed = GetDiagnosticsArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments for get_diagnostics: ${parsed.error}`);
+        }
+
+        // Check if LSP client is initialized
+        if (!lspClient) {
+          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+        }
+
+        try {
+          // Get diagnostics for a specific file or all files
+          if (parsed.data.file_path) {
+            // For a specific file
+            console.log(`Getting diagnostics for file: ${parsed.data.file_path}`);
+            const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
+
+            // Verify the file is open
+            if (!lspClient.isDocumentOpen(fileUri)) {
+              throw new Error(`File ${parsed.data.file_path} is not open. Please open the file with open_document before requesting diagnostics.`);
+            }
+
+            const diagnostics = lspClient.getDiagnostics(fileUri);
+
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ [fileUri]: diagnostics }, null, 2)
+              }],
+            };
+          } else {
+            // For all files
+            console.log("Getting diagnostics for all files");
+            const allDiagnostics = lspClient.getAllDiagnostics();
+
+            // Convert Map to object for JSON serialization
+            const diagnosticsObject: Record<string, any[]> = {};
+            allDiagnostics.forEach((value, key) => {
+              // Only include diagnostics for open files
+              if (lspClient.isDocumentOpen(key)) {
+                diagnosticsObject[key] = value;
+              }
+            });
+
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(diagnosticsObject, null, 2)
+              }],
+            };
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`Error getting diagnostics: ${errorMessage}`);
+          throw new Error(`Failed to get diagnostics: ${errorMessage}`);
         }
       }
 
@@ -957,6 +1119,251 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
+// Resource handler for diagnostics
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  try {
+    console.log(`Handling ReadResource request for URI: ${request.params.uri}`);
+    const uri = request.params.uri;
+
+    // Parse the lsp-diagnostics URI
+    if (uri.startsWith('lsp-diagnostics://')) {
+      // Check if LSP client is initialized
+      if (!lspClient) {
+        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+      }
+
+      // Extract the file path parameter from the URI
+      // lsp-diagnostics:// is 18 characters
+      const filePath = uri.slice(18);
+
+      let diagnosticsContent: string;
+
+      if (filePath) {
+        // For a specific file
+        console.log(`Getting diagnostics for file: ${filePath}`);
+        const fileUri = `file://${path.resolve(filePath)}`;
+
+        // Verify the file is open
+        if (!lspClient.isDocumentOpen(fileUri)) {
+          throw new Error(`File ${filePath} is not open. Please open the file with open_document before requesting diagnostics.`);
+        }
+
+        const diagnostics = lspClient.getDiagnostics(fileUri);
+        diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
+      } else {
+        // For all files
+        console.log("Getting diagnostics for all files");
+        const allDiagnostics = lspClient.getAllDiagnostics();
+
+        // Convert Map to object for JSON serialization
+        const diagnosticsObject: Record<string, any[]> = {};
+        allDiagnostics.forEach((value, key) => {
+          // Only include diagnostics for open files
+          if (lspClient.isDocumentOpen(key)) {
+            diagnosticsObject[key] = value;
+          }
+        });
+
+        diagnosticsContent = JSON.stringify(diagnosticsObject, null, 2);
+      }
+
+      return {
+        content: [{ type: "text", text: diagnosticsContent }],
+      };
+    }
+
+    throw new Error(`Unknown resource URI: ${uri}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error handling resource request: ${errorMessage}`);
+    return {
+      content: [{ type: "text", text: `Error: ${errorMessage}` }],
+      isError: true,
+    };
+  }
+});
+
+// Resource subscription handler
+server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+  try {
+    const { uri } = request.params;
+    console.log(`Handling SubscribeResource request for URI: ${uri}`);
+
+    if (uri.startsWith('lsp-diagnostics://')) {
+      // Check if LSP client is initialized
+      if (!lspClient) {
+        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+      }
+
+      // Extract the file path parameter from the URI
+      const filePath = uri.slice(18);
+
+      if (filePath) {
+        // Subscribe to a specific file
+        const fileUri = `file://${path.resolve(filePath)}`;
+
+        // Verify the file is open
+        if (!lspClient.isDocumentOpen(fileUri)) {
+          throw new Error(`File ${filePath} is not open. Please open the file with open_document before subscribing to diagnostics.`);
+        }
+
+        console.log(`Subscribing to diagnostics for file: ${filePath}`);
+
+        // Set up the subscription callback
+        const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
+          if (diagUri === fileUri) {
+            // Send resource update to clients
+            server.notification({
+              method: "notifications/resources/update",
+              params: {
+                uri,
+                content: [{ type: "text", text: JSON.stringify({ [diagUri]: diagnostics }, null, 2) }]
+              }
+            });
+          }
+        };
+
+        // Store the callback in the subscription context for later use with unsubscribe
+        const subscriptionContext: SubscriptionContext = { callback };
+
+        // Subscribe to diagnostics
+        lspClient.subscribeToDiagnostics(callback);
+
+        return {
+          ok: true,
+          context: subscriptionContext
+        };
+      } else {
+        // Subscribe to all files
+        console.log("Subscribing to diagnostics for all files");
+
+        // Set up the subscription callback for all files
+        const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
+          // Only send updates for open files
+          if (lspClient.isDocumentOpen(diagUri)) {
+            // Get all open documents' diagnostics
+            const allDiagnostics = lspClient.getAllDiagnostics();
+
+            // Convert Map to object for JSON serialization
+            const diagnosticsObject: Record<string, any[]> = {};
+            allDiagnostics.forEach((diagValue, diagKey) => {
+              // Only include diagnostics for open files
+              if (lspClient.isDocumentOpen(diagKey)) {
+                diagnosticsObject[diagKey] = diagValue;
+              }
+            });
+
+            // Send resource update to clients
+            server.notification({
+              method: "notifications/resources/update",
+              params: {
+                uri,
+                content: [{ type: "text", text: JSON.stringify(diagnosticsObject, null, 2) }]
+              }
+            });
+          }
+        };
+
+        // Store the callback in the subscription context for later use with unsubscribe
+        const subscriptionContext: SubscriptionContext = { callback };
+
+        // Subscribe to diagnostics
+        lspClient.subscribeToDiagnostics(callback);
+
+        return {
+          ok: true,
+          context: subscriptionContext
+        };
+      }
+    }
+
+    throw new Error(`Unknown resource URI: ${uri}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error handling subscription request: ${errorMessage}`);
+    return {
+      ok: false,
+      error: errorMessage
+    };
+  }
+});
+
+// Resource unsubscription handler
+server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+  try {
+    const { uri, context } = request.params;
+    console.log(`Handling UnsubscribeResource request for URI: ${uri}`);
+
+    if (uri.startsWith('lsp-diagnostics://') && context && (context as SubscriptionContext).callback) {
+      // Check if LSP client is initialized
+      if (!lspClient) {
+        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+      }
+
+      // Unsubscribe the callback
+      lspClient.unsubscribeFromDiagnostics((context as SubscriptionContext).callback);
+      console.log(`Unsubscribed from diagnostics for URI: ${uri}`);
+
+      return { ok: true };
+    }
+
+    throw new Error(`Unknown resource URI or invalid context: ${uri}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error handling unsubscription request: ${errorMessage}`);
+    return {
+      ok: false,
+      error: errorMessage
+    };
+  }
+});
+
+// Resource listing handler
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  try {
+    console.log("Handling ListResource request");
+
+    // Check if LSP client is initialized
+    if (!lspClient) {
+      return { resources: [] }; // Return empty list if LSP is not initialized
+    }
+
+    // List all diagnostic resources (one for each open file)
+    const resources = [];
+
+    // Add the "all diagnostics" resource
+    resources.push({
+      uri: "lsp-diagnostics://",
+      name: "All diagnostics",
+      description: "Diagnostics for all open files",
+      subscribe: true,
+    });
+
+    // For each open document, add a resource
+    lspClient.getOpenDocuments().forEach(uri => {
+      if (uri.startsWith('file://')) {
+        const filePath = uri.slice(7); // Remove 'file://' prefix
+        resources.push({
+          uri: `lsp-diagnostics://${filePath}`,
+          name: `Diagnostics for ${path.basename(filePath)}`,
+          description: `LSP diagnostics for ${filePath}`,
+          subscribe: true,
+        });
+      }
+    });
+
+    return { resources };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error handling list resources request: ${errorMessage}`);
+    return {
+      resources: [],
+      isError: true,
+      error: errorMessage
+    };
+  }
+});
+
 // Start server
 async function runServer() {
   console.log("Starting LSP MCP Server...");
@@ -970,7 +1377,7 @@ async function runServer() {
   if (logFilePath) {
     console.log(`Logging to file: ${logFilePath}`);
   }
-  
+
   // Create LSP client instance but don't initialize yet
   // Initialization will happen when start_lsp is called
   lspClient = new LSPClient(lspServerPath, lspServerArgs);
