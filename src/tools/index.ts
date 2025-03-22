@@ -168,10 +168,11 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
     "start_lsp": {
       schema: StartLSPArgsSchema,
       handler: async (args: any) => {
-        info(`Starting LSP server with root directory: ${args.root_dir}`);
+        const startRootDir = args.root_dir || rootDir;
+        info(`Starting LSP server with root directory: ${startRootDir}`);
 
         try {
-          setRootDir(args.root_dir);
+          setRootDir(startRootDir);
 
           // Create LSP client if it doesn't exist
           if (!lspClient) {
@@ -180,7 +181,7 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
           }
 
           // Initialize with the specified root directory
-          await lspClient!.initialize(rootDir);
+          await lspClient!.initialize(startRootDir);
 
           return {
             content: [{ type: "text", text: `LSP server successfully started with root directory: ${rootDir}` }],

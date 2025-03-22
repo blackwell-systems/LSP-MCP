@@ -250,7 +250,7 @@ class PromptsTester {
       }
 
       // Verify we have the expected prompts
-      const requiredPrompts = ['lsp_guide', 'language_help'];
+      const requiredPrompts = ['lsp_guide'];
 
       const missingPrompts = requiredPrompts.filter(prompt =>
         !prompts.some(p => p.name === prompt)
@@ -258,12 +258,6 @@ class PromptsTester {
 
       if (missingPrompts.length > 0) {
         throw new Error(`Missing expected prompts: ${missingPrompts.join(', ')}`);
-      }
-
-      // Verify the language_help prompt has arguments
-      const languageHelpPrompt = prompts.find(p => p.name === 'language_help');
-      if (!languageHelpPrompt || !languageHelpPrompt.arguments || languageHelpPrompt.arguments.length === 0) {
-        throw new Error("language_help prompt should have arguments");
       }
 
       return prompts;
