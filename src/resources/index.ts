@@ -20,23 +20,23 @@ export const parseLocationParams = (uri: URL): { filePath: string, line: number,
 
   // Get the query parameters
   const lineParam = uri.searchParams.get('line');
-  const characterParam = uri.searchParams.get('character');
+  const columnParam = uri.searchParams.get('column');
   const languageId = uri.searchParams.get('language_id');
 
   if (!languageId) {
     throw new Error("language_id parameter is required");
   }
 
-  if (!filePath || !lineParam || !characterParam) {
-    throw new Error("Required parameters: file_path, line, character");
+  if (!filePath || !lineParam || !columnParam) {
+    throw new Error("Required parameters: file_path, line, column");
   }
 
-  // Parse line and character as numbers
+  // Parse line and column as numbers
   const line = parseInt(lineParam, 10);
-  const character = parseInt(characterParam, 10);
+  const character = parseInt(columnParam, 10);
 
   if (isNaN(line) || isNaN(character)) {
-    throw new Error("Line and character must be valid numbers");
+    throw new Error("Line and column must be valid numbers");
   }
 
   return { filePath, line, character, languageId };
@@ -49,44 +49,58 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
     'lsp-diagnostics://': async (uri: string) => {
       checkLspClientInitialized(lspClient);
 
-      // Extract the file path parameter from the URI
-      // lsp-diagnostics:// is 18 characters
-      const filePath = uri.slice(18);
-
-      let diagnosticsContent: string;
-
-      if (filePath) {
-        // For a specific file
-        debug(`Getting diagnostics for file: ${filePath}`);
-        const fileUri = createFileUri(filePath);
-
-        // Verify the file is open
-        if (!lspClient!.isDocumentOpen(fileUri)) {
-          throw new Error(`File ${filePath} is not open. Please open the file with open_document before requesting diagnostics.`);
+      try {
+        // Parse the URI to handle query parameters correctly
+        const diagnosticsUri = new URL(uri);
+        
+        // Get the file path from the pathname
+        let filePath = parseUriPath(diagnosticsUri);
+        
+        // Remove query parameters from the file path if needed
+        const questionMarkIndex = filePath.indexOf('?');
+        if (questionMarkIndex !== -1) {
+          filePath = filePath.substring(0, questionMarkIndex);
         }
 
-        const diagnostics = lspClient!.getDiagnostics(fileUri);
-        diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
-      } else {
-        // For all files
-        debug("Getting diagnostics for all files");
-        const allDiagnostics = lspClient!.getAllDiagnostics();
+        let diagnosticsContent: string;
 
-        // Convert Map to object for JSON serialization
-        const diagnosticsObject: Record<string, any[]> = {};
-        allDiagnostics.forEach((value: any[], key: string) => {
-          // Only include diagnostics for open files
-          if (lspClient!.isDocumentOpen(key)) {
-            diagnosticsObject[key] = value;
+        if (filePath && filePath !== '/') {
+          // For a specific file
+          debug(`Getting diagnostics for file: ${filePath}`);
+          const fileUri = createFileUri(filePath);
+
+          // Verify the file is open
+          if (!lspClient!.isDocumentOpen(fileUri)) {
+            throw new Error(`File ${filePath} is not open. Please open the file with open_document before requesting diagnostics.`);
           }
-        });
 
-        diagnosticsContent = JSON.stringify(diagnosticsObject, null, 2);
+          const diagnostics = lspClient!.getDiagnostics(fileUri);
+          diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
+        } else {
+          // For all files
+          debug("Getting diagnostics for all files");
+          const allDiagnostics = lspClient!.getAllDiagnostics();
+
+          // Convert Map to object for JSON serialization
+          const diagnosticsObject: Record<string, any[]> = {};
+          allDiagnostics.forEach((value: any[], key: string) => {
+            // Only include diagnostics for open files
+            if (lspClient!.isDocumentOpen(key)) {
+              diagnosticsObject[key] = value;
+            }
+          });
+
+          diagnosticsContent = JSON.stringify(diagnosticsObject, null, 2);
+        }
+
+        return {
+          contents: [{ type: "text", text: diagnosticsContent, uri }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error parsing diagnostics URI or getting diagnostics: ${errorMessage}`);
+        throw new Error(`Error processing diagnostics request: ${errorMessage}`);
       }
-
-      return {
-        contents: [{ type: "text", text: diagnosticsContent, uri }],
-      };
     },
 
     // Handler for lsp-hover://
@@ -293,14 +307,14 @@ export const getResourceTemplates = () => {
     {
       name: "lsp-hover",
       scheme: "lsp-hover",
-      pattern: "lsp-hover://{file_path}?line={line}&character={character}&language_id={language_id}",
+      pattern: "lsp-hover://{file_path}?line={line}&column={column}&language_id={language_id}",
       description: "Get hover information for a specific location in a file. Use this resource to retrieve type information, documentation, and other contextual details about symbols in your code. Particularly useful for understanding variable types, function signatures, and module documentation at a specific cursor position.",
       subscribe: false,
     },
     {
       name: "lsp-completions",
       scheme: "lsp-completions",
-      pattern: "lsp-completions://{file_path}?line={line}&character={character}&language_id={language_id}",
+      pattern: "lsp-completions://{file_path}?line={line}&column={column}&language_id={language_id}",
       description: "Get completion suggestions for a specific location in a file. Use this resource to obtain code completion options based on the current context, including variable names, function calls, object properties, and more. Helpful for code assistance and auto-completion features at a specific cursor position.",
       subscribe: false,
     }
@@ -345,10 +359,10 @@ export const generateResourcesList = (lspClient: LSPClient | null) => {
       });
 
       // Add hover resource template
-      // We don't add specific hover resources since they require line/character coordinates
+      // We don't add specific hover resources since they require line/column coordinates
       // which are not known until the client requests them
       resources.push({
-        uri: `lsp-hover://${filePath}?line={line}&character={character}&language_id={language_id}`,
+        uri: `lsp-hover://${filePath}?line={line}&column={column}&language_id={language_id}`,
         name: `Hover for ${fileName}`,
         description: `LSP hover information template for ${fileName}`,
         subscribe: false,
@@ -357,7 +371,7 @@ export const generateResourcesList = (lspClient: LSPClient | null) => {
 
       // Add completions resource template
       resources.push({
-        uri: `lsp-completions://${filePath}?line={line}&character={character}&language_id={language_id}`,
+        uri: `lsp-completions://${filePath}?line={line}&column={column}&language_id={language_id}`,
         name: `Completions for ${fileName}`,
         description: `LSP code completion suggestions template for ${fileName}`,
         subscribe: false,

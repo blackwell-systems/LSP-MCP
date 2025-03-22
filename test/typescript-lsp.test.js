@@ -134,9 +134,9 @@ class TypeScriptLspTester {
 
   async start() {
     // Start the MCP server
-    console.log(`Starting MCP server: node ${LSP_MCP_SERVER} ${TS_SERVER_BIN} --stdio`);
+    console.log(`Starting MCP server: node ${LSP_MCP_SERVER} typescript ${TS_SERVER_BIN} --stdio`);
 
-    this.serverProcess = spawn('node', [LSP_MCP_SERVER, TS_SERVER_BIN, '--stdio'], {
+    this.serverProcess = spawn('node', [LSP_MCP_SERVER, 'typescript', TS_SERVER_BIN, '--stdio'], {
       env: {
         ...process.env,
         DEBUG: 'true',
@@ -431,7 +431,7 @@ async function runTests() {
         file_path: EXAMPLE_TS_FILE,
         language_id: 'typescript',
         line: 4,
-        character: 15
+        column: 15
       }, (result) => {
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
@@ -445,7 +445,7 @@ async function runTests() {
         file_path: EXAMPLE_TS_FILE,
         language_id: 'typescript',
         line: 5,
-        character: 10
+        column: 10
       }, (result) => {
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
@@ -470,9 +470,9 @@ async function runTests() {
         file_path: EXAMPLE_TS_FILE,
         language_id: 'typescript',
         start_line: 40,
-        start_character: 1,
+        start_column: 1,
         end_line: 40,
-        end_character: 20
+        end_column: 20
       }, (result) => {
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
@@ -513,7 +513,7 @@ async function runTests() {
       });
       
       // Then try to access diagnostics resource using proper URI format
-      const diagnosticsUri = `lsp-diagnostics://${EXAMPLE_TS_FILE}`;
+      const diagnosticsUri = `lsp-diagnostics://${EXAMPLE_TS_FILE}?language_id=typescript`;
       await tester.accessResource({
         uri: diagnosticsUri
       }, (result) => {
@@ -525,7 +525,7 @@ async function runTests() {
     // Test accessing hover resource
     await tester.runTest('Access hover resource', async () => {
       // Use proper URI format for hover resource
-      const hoverUri = `lsp-hover://${EXAMPLE_TS_FILE}?line=4&character=15&language_id=typescript`;
+      const hoverUri = `lsp-hover://${EXAMPLE_TS_FILE}?line=4&column=15&language_id=typescript`;
       await tester.accessResource({
         uri: hoverUri
       }, (result) => {
@@ -537,7 +537,7 @@ async function runTests() {
     // Test accessing completion resource
     await tester.runTest('Access completion resource', async () => {
       // Use proper URI format for completion resource
-      const completionUri = `lsp-completions://${EXAMPLE_TS_FILE}?line=5&character=10&language_id=typescript`;
+      const completionUri = `lsp-completions://${EXAMPLE_TS_FILE}?line=5&column=10&language_id=typescript`;
       await tester.accessResource({
         uri: completionUri
       }, (result) => {

@@ -19,24 +19,42 @@ import { LSPClient } from "./src/lspClient.js";
 import { debug, info, notice, warning, logError, critical, alert, emergency, setLogLevel, setServer } from "./src/logging/index.js";
 import { getToolHandlers, getToolDefinitions } from "./src/tools/index.js";
 import { getPromptHandlers, getPromptDefinitions } from "./src/prompts/index.js";
-import { 
-  getResourceHandlers, 
-  getSubscriptionHandlers, 
-  getUnsubscriptionHandlers, 
+import {
+  getResourceHandlers,
+  getSubscriptionHandlers,
+  getUnsubscriptionHandlers,
   getResourceTemplates,
   generateResourcesList
 } from "./src/resources/index.js";
+import {
+  getExtensionToolHandlers,
+  getExtensionToolDefinitions,
+  getExtensionResourceHandlers,
+  getExtensionSubscriptionHandlers,
+  getExtensionUnsubscriptionHandlers,
+  getExtensionResourceTemplates,
+  getExtensionPromptDefinitions,
+  getExtensionPromptHandlers
+} from "./src/extensions/index.js";
+
+import { activateExtension } from "./src/extensions/index.js";
+
+// Get the language ID from the command line arguments
+const languageId = process.argv[2];
+
+// Add any language-specific extensions here
+await activateExtension(languageId);
 
 // Get LSP binary path and arguments from command line arguments
-const lspServerPath = process.argv[2];
+const lspServerPath = process.argv[3];
 if (!lspServerPath) {
   console.error("Error: LSP server path is required as the first argument");
-  console.error("Usage: node dist/index.js <lsp-server-path> [lsp-server-args...]");
+  console.error("Usage: node dist/index.js <language> <lsp-server-path> [lsp-server-args...]");
   process.exit(1);
 }
 
 // Get any additional arguments to pass to the LSP server
-const lspServerArgs = process.argv.slice(3);
+const lspServerArgs = process.argv.slice(4);
 
 // Verify the LSP server binary exists
 try {
@@ -69,8 +87,8 @@ const setRootDir = (dir: string) => {
 const server = new Server(
   {
     name: "lsp-mcp-server",
-    version: "0.2.0",
-    description: "MCP server for Language Server Protocol (LSP) integration, providing hover information, code completions, diagnostics, and code actions with resource-based access"
+    version: "0.3.0",
+    description: "MCP server for Language Server Protocol (LSP) integration, providing hover information, code completions, diagnostics, and code actions with resource-based access and extensibility"
   },
   {
     capabilities: {
@@ -78,32 +96,42 @@ const server = new Server(
         description: "A set of tools for interacting with the Language Server Protocol (LSP). These tools provide access to language-specific features like code completion, hover information, diagnostics, and code actions. Before using any LSP features, you must first call start_lsp with the project root directory, then open the files you wish to analyze."
       },
       resources: {
-        description: "URI-based access to Language Server Protocol (LSP) features. These resources provide a way to access language-specific features like diagnostics, hover information, and completions through a URI pattern. Before using these resources, you must first call the start_lsp tool with the project root directory, then open the files you wish to analyze using the open_document tool.",
+        description: "URI-based access to Language Server Protocol (LSP) features. These resources provide a way to access language-specific features like diagnostics, hover information, and completions through a URI pattern. Before using these resources, you must first call the start_lsp tool with the project root directory, then open the files you wish to analyze using the open_document tool. Additional resources may be available through language-specific extensions.",
         templates: getResourceTemplates()
       },
       prompts: {
-        description: "Helpful prompts related to using the LSP MCP server. These prompts provide guidance on how to use the LSP features and tools available in this server."
+        description: "Helpful prompts related to using the LSP MCP server. These prompts provide guidance on how to use the LSP features and tools available in this server. Additional prompts may be available through language-specific extensions."
       },
       logging: {
         description: "Logging capabilities for the LSP MCP server. Use the set_log_level tool to control logging verbosity. The server sends notifications about important events, errors, and diagnostic updates."
-      },
+      }
     },
   },
 );
 
-// Set the server instance for logging
+// Set the server instance for logging and tools
 setServer(server);
 
 // Tool handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   debug("Handling ListTools request");
+  // Combine core tools and extension tools
+  const coreTools = getToolDefinitions();
+  const extensionTools = getExtensionToolDefinitions();
   return {
-    tools: getToolDefinitions(),
+    tools: [...coreTools, ...extensionTools],
   };
 });
 
-// Get the tool handlers
-const getToolsHandlers = () => getToolHandlers(lspClient, lspServerPath, lspServerArgs, setLspClient, rootDir, setRootDir);
+// Get the combined tool handlers from core and extensions
+const getToolsHandlers = () => {
+  // Get core handlers, passing the server instance for notifications
+  const coreHandlers = getToolHandlers(lspClient, lspServerPath, lspServerArgs, setLspClient, rootDir, setRootDir, server);
+  // Get extension handlers
+  const extensionHandlers = getExtensionToolHandlers();
+  // Combine them (extensions take precedence in case of name conflicts)
+  return { ...coreHandlers, ...extensionHandlers };
+};
 
 // Handle tool requests using the toolHandlers object
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -113,7 +141,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Get the latest tool handlers and look up the handler for this tool
     const toolHandlers = getToolsHandlers();
+
+    // Check if it's a direct handler or an extension handler
     const toolHandler = toolHandlers[name as keyof typeof toolHandlers];
+
     if (!toolHandler) {
       throw new Error(`Unknown tool: ${name}`);
     }
@@ -143,8 +174,12 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const uri = request.params.uri;
     debug(`Handling ReadResource request for URI: ${uri}`);
 
-    // Get the resource handlers
-    const resourceHandlers = getResourceHandlers(lspClient);
+    // Get the core and extension resource handlers
+    const coreHandlers = getResourceHandlers(lspClient);
+    const extensionHandlers = getExtensionResourceHandlers();
+
+    // Combine them (extensions take precedence in case of conflicts)
+    const resourceHandlers = { ...coreHandlers, ...extensionHandlers };
 
     // Find the appropriate handler for this URI scheme
     const handlerKey = Object.keys(resourceHandlers).find(key => uri.startsWith(key));
@@ -169,8 +204,12 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
     const { uri } = request.params;
     debug(`Handling SubscribeResource request for URI: ${uri}`);
 
-    // Get the subscription handlers
-    const subscriptionHandlers = getSubscriptionHandlers(lspClient, server);
+    // Get the core and extension subscription handlers
+    const coreHandlers = getSubscriptionHandlers(lspClient, server);
+    const extensionHandlers = getExtensionSubscriptionHandlers();
+
+    // Combine them (extensions take precedence in case of conflicts)
+    const subscriptionHandlers = { ...coreHandlers, ...extensionHandlers };
 
     // Find the appropriate handler for this URI scheme
     const handlerKey = Object.keys(subscriptionHandlers).find(key => uri.startsWith(key));
@@ -195,8 +234,12 @@ server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
     const { uri, context } = request.params;
     debug(`Handling UnsubscribeResource request for URI: ${uri}`);
 
-    // Get the unsubscription handlers
-    const unsubscriptionHandlers = getUnsubscriptionHandlers(lspClient);
+    // Get the core and extension unsubscription handlers
+    const coreHandlers = getUnsubscriptionHandlers(lspClient);
+    const extensionHandlers = getExtensionUnsubscriptionHandlers();
+
+    // Combine them (extensions take precedence in case of conflicts)
+    const unsubscriptionHandlers = { ...coreHandlers, ...extensionHandlers };
 
     // Find the appropriate handler for this URI scheme
     const handlerKey = Object.keys(unsubscriptionHandlers).find(key => uri.startsWith(key));
@@ -240,8 +283,14 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
   try {
     debug("Handling ListResource request");
 
-    // Generate the resources list
-    const resources = generateResourcesList(lspClient);
+    // Generate the core resources list
+    const coreResources = generateResourcesList(lspClient);
+
+    // Get extension resource templates
+    const extensionTemplates = getExtensionResourceTemplates();
+
+    // Combine core resources and extension templates
+    const resources = [...coreResources, ...extensionTemplates];
 
     return { resources };
   } catch (error) {
@@ -259,8 +308,11 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 server.setRequestHandler(ListPromptsRequestSchema, async () => {
   try {
     debug("Handling ListPrompts request");
+    // Combine core and extension prompts
+    const corePrompts = getPromptDefinitions();
+    const extensionPrompts = getExtensionPromptDefinitions();
     return {
-      prompts: getPromptDefinitions(),
+      prompts: [...corePrompts, ...extensionPrompts],
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -279,10 +331,15 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     debug(`Handling GetPrompt request for prompt: ${name}`);
 
-    // Get the prompt handlers
-    const promptHandlers = getPromptHandlers();
+    // Get the core and extension prompt handlers
+    const coreHandlers = getPromptHandlers();
+    const extensionHandlers = getExtensionPromptHandlers();
+
+    // Combine them (extensions take precedence in case of conflicts)
+    const promptHandlers = { ...coreHandlers, ...extensionHandlers };
+
     const promptHandler = promptHandlers[name];
-    
+
     if (!promptHandler) {
       throw new Error(`Unknown prompt: ${name}`);
     }
@@ -327,6 +384,7 @@ process.on('uncaughtException', (error) => {
 // Start server
 async function runServer() {
   notice(`Starting LSP MCP Server`);
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   notice("LSP MCP Server running on stdio");

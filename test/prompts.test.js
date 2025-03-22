@@ -129,9 +129,9 @@ class PromptsTester {
 
   async start() {
     // Start the MCP server
-    console.log(`Starting MCP server: node ${LSP_MCP_SERVER} ${TS_SERVER_BIN} --stdio`);
+    console.log(`Starting MCP server: node ${LSP_MCP_SERVER} typescript ${TS_SERVER_BIN} --stdio`);
 
-    this.serverProcess = spawn('node', [LSP_MCP_SERVER, TS_SERVER_BIN, '--stdio'], {
+    this.serverProcess = spawn('node', [LSP_MCP_SERVER, 'typescript', TS_SERVER_BIN, '--stdio'], {
       env: {
         ...process.env,
         DEBUG: 'true',
@@ -350,21 +350,6 @@ async function runTests() {
     // Test getting the LSP guide prompt
     await tester.runTest('Get LSP guide prompt', async () => {
       await tester.testGetPrompt('lsp_guide');
-    });
-
-    // Test getting the language help prompt with TypeScript
-    await tester.runTest('Get language help prompt for TypeScript', async () => {
-      await tester.testGetPrompt('language_help', {
-        language: 'typescript'
-      });
-    });
-
-    // Test getting the language help prompt with a specific feature
-    await tester.runTest('Get language help prompt for Haskell types', async () => {
-      await tester.testGetPrompt('language_help', {
-        language: 'haskell',
-        feature: 'types'
-      });
     });
 
   } catch (error) {

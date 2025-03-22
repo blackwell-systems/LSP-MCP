@@ -66,23 +66,23 @@ export const GetInfoOnLocationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
   language_id: z.string().describe("The programming language the file is written in"),
   line: z.number().describe(`Line number`),
-  character: z.number().describe(`Character position`),
+  column: z.number().describe(`Column position`),
 });
 
 export const GetCompletionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
   line: z.number().describe(`Line number`),
-  character: z.number().describe(`Character position`),
+  column: z.number().describe(`Column position`),
 });
 
 export const GetCodeActionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
   start_line: z.number().describe(`Start line number`),
-  start_character: z.number().describe(`Start character position`),
+  start_column: z.number().describe(`Start column position`),
   end_line: z.number().describe(`End line number`),
-  end_character: z.number().describe(`End character position`),
+  end_column: z.number().describe(`End column position`),
 });
 
 export const OpenDocumentArgsSchema = z.object({

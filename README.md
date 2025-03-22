@@ -171,8 +171,8 @@ Gets hover information at a specific location in a file.
 Parameters:
 - `file_path`: Path to the file
 - `language_id`: The programming language the file is written in (e.g., "haskell")
-- `line`: Line number (0-based)
-- `character`: Character position (0-based)
+- `line`: Line number
+- `column`: Column position
 
 Example:
 ```json
@@ -182,7 +182,7 @@ Example:
     "file_path": "/path/to/your/file",
     "language_id": "haskell",
     "line": 3,
-    "character": 5
+    "column": 5
   }
 }
 ```
@@ -194,8 +194,8 @@ Gets completion suggestions at a specific location in a file.
 Parameters:
 - `file_path`: Path to the file
 - `language_id`: The programming language the file is written in (e.g., "haskell")
-- `line`: Line number (0-based)
-- `character`: Character position (0-based)
+- `line`: Line number
+- `column`: Column position
 
 Example:
 ```json
@@ -205,7 +205,7 @@ Example:
     "file_path": "/path/to/your/file",
     "language_id": "haskell",
     "line": 3,
-    "character": 10
+    "column": 10
   }
 }
 ```
@@ -217,10 +217,10 @@ Gets code actions for a specific range in a file.
 Parameters:
 - `file_path`: Path to the file
 - `language_id`: The programming language the file is written in (e.g., "haskell")
-- `start_line`: Start line number (0-based)
-- `start_character`: Start character position (0-based)
-- `end_line`: End line number (0-based)
-- `end_character`: End character position (0-based)
+- `start_line`: Start line number
+- `start_column`: Start column position
+- `end_line`: End line number
+- `end_column`: End column position
 
 Example:
 ```json
@@ -230,9 +230,9 @@ Example:
     "file_path": "/path/to/your/file",
     "language_id": "haskell",
     "start_line": 3,
-    "start_character": 5,
+    "start_column": 5,
     "end_line": 3,
-    "end_character": 10
+    "end_column": 10
   }
 }
 ```
@@ -377,17 +377,17 @@ The server exposes hover information via the `lsp-hover://` resource scheme. Thi
 
 Resource URI format:
 ```
-lsp-hover:///path/to/file?line={line}&character={character}&language_id={language_id}
+lsp-hover:///path/to/file?line={line}&column={column}&language_id={language_id}
 ```
 
 Parameters:
 - `line`: Line number (1-based)
-- `character`: Character position (1-based)
+- `column`: Column position (1-based)
 - `language_id`: The programming language (e.g., "haskell")
 
 Example:
 ```
-lsp-hover:///home/user/project/src/Main.hs?line=42&character=10&language_id=haskell
+lsp-hover:///home/user/project/src/Main.hs?line=42&column=10&language_id=haskell
 ```
 
 ### Code Completion Resources
@@ -396,17 +396,17 @@ The server exposes code completion suggestions via the `lsp-completions://` reso
 
 Resource URI format:
 ```
-lsp-completions:///path/to/file?line={line}&character={character}&language_id={language_id}
+lsp-completions:///path/to/file?line={line}&column={column}&language_id={language_id}
 ```
 
 Parameters:
 - `line`: Line number (1-based)
-- `character`: Character position (1-based)
+- `column`: Column position (1-based)
 - `language_id`: The programming language (e.g., "haskell")
 
 Example:
 ```
-lsp-completions:///home/user/project/src/Main.hs?line=42&character=10&language_id=haskell
+lsp-completions:///home/user/project/src/Main.hs?line=42&column=10&language_id=haskell
 ```
 
 ### Listing Available Resources
@@ -441,6 +441,7 @@ Both approaches provide the same data in the same format and enforce the same re
       "command": "npx",
       "args": [
         "tritlo/lsp-mcp",
+        "<language-id>",
         "<path-to-lsp>",
         "<lsp-args>"
       ]

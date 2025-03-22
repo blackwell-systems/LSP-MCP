@@ -1,21 +1,23 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { 
-  GetInfoOnLocationArgsSchema, 
-  GetCompletionsArgsSchema, 
+import {
+  GetInfoOnLocationArgsSchema,
+  GetCompletionsArgsSchema,
   GetCodeActionsArgsSchema,
   OpenDocumentArgsSchema,
   CloseDocumentArgsSchema,
   GetDiagnosticsArgsSchema,
   SetLogLevelArgsSchema,
   RestartLSPServerArgsSchema,
-  StartLSPArgsSchema, 
+  StartLSPArgsSchema,
   ToolInput,
   ToolHandler
 } from "../types/index.js";
 import { LSPClient } from "../lspClient.js";
 import { debug, info, logError, notice, warning, setLogLevel } from "../logging/index.js";
+import { activateExtension, deactivateExtension, listActiveExtensions } from "../extensions/index.js";
 
 // Create a file URI from a file path
 export const createFileUri = (filePath: string): string => {
@@ -30,12 +32,12 @@ export const checkLspClientInitialized = (lspClient: LSPClient | null): void => 
 };
 
 // Define handlers for each tool
-export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: string, lspServerArgs: string[], setLspClient: (client: LSPClient) => void, rootDir: string, setRootDir: (dir: string) => void) => {
+export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: string, lspServerArgs: string[], setLspClient: (client: LSPClient) => void, rootDir: string, setRootDir: (dir: string) => void, server?: any) => {
   return {
     "get_info_on_location": {
       schema: GetInfoOnLocationArgsSchema,
       handler: async (args: any) => {
-        debug(`Getting info on location in file: ${args.file_path} (${args.line}:${args.character})`);
+        debug(`Getting info on location in file: ${args.file_path} (${args.line}:${args.column})`);
 
         checkLspClientInitialized(lspClient);
 
@@ -51,7 +53,7 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
         // Get information at the location
         const text = await lspClient!.getInfoOnLocation(fileUri, {
           line: args.line - 1, // LSP is 0-based
-          character: args.character - 1
+          character: args.column - 1
         });
 
         debug(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
@@ -65,7 +67,7 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
     "get_completions": {
       schema: GetCompletionsArgsSchema,
       handler: async (args: any) => {
-        debug(`Getting completions in file: ${args.file_path} (${args.line}:${args.character})`);
+        debug(`Getting completions in file: ${args.file_path} (${args.line}:${args.column})`);
 
         checkLspClientInitialized(lspClient);
 
@@ -81,7 +83,7 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
         // Get completions at the location
         const completions = await lspClient!.getCompletion(fileUri, {
           line: args.line - 1, // LSP is 0-based
-          character: args.character - 1
+          character: args.column - 1
         });
 
         debug(`Returned ${completions.length} completions`);
@@ -95,7 +97,7 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
     "get_code_actions": {
       schema: GetCodeActionsArgsSchema,
       handler: async (args: any) => {
-        debug(`Getting code actions in file: ${args.file_path} (${args.start_line}:${args.start_character} to ${args.end_line}:${args.end_character})`);
+        debug(`Getting code actions in file: ${args.file_path} (${args.start_line}:${args.start_column} to ${args.end_line}:${args.end_column})`);
 
         checkLspClientInitialized(lspClient);
 
@@ -112,11 +114,11 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
         const codeActions = await lspClient!.getCodeActions(fileUri, {
           start: {
             line: args.start_line - 1, // LSP is 0-based
-            character: args.start_character - 1
+            character: args.start_column - 1
           },
           end: {
             line: args.end_line - 1,
-            character: args.end_character - 1
+            character: args.end_column - 1
           }
         });
 
@@ -309,7 +311,7 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
           content: [{ type: "text", text: `Log level set to: ${level}` }],
         };
       }
-    }
+    },
   };
 };
 
