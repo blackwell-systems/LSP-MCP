@@ -17,6 +17,7 @@ This enables LLMs to utilize LSPs for more accurate code suggestions.
 
 - `get_info_on_location`: Get hover information at a specific location in a file
 - `get_completions`: Get completion suggestions at a specific location in a file
+- `get_code_actions`: Get code actions for a specific range in a file
 - `restart_lsp_server`: Restart the LSP server without restarting the MCP server
 - Detailed logging for debugging and auditing
 - Simple command-line interface
@@ -124,6 +125,33 @@ Example:
     "language_id": "haskell",
     "line": 3,
     "character": 10
+  }
+}
+```
+
+### get_code_actions
+
+Gets code actions for a specific range in a file.
+
+Parameters:
+- `file_path`: Path to the file
+- `language_id`: The programming language the file is written in (e.g., "haskell")
+- `start_line`: Start line number (0-based)
+- `start_character`: Start character position (0-based)
+- `end_line`: End line number (0-based)
+- `end_character`: End character position (0-based)
+
+Example:
+```json
+{
+  "tool": "get_code_actions",
+  "arguments": {
+    "file_path": "/path/to/your/file",
+    "language_id": "haskell",
+    "start_line": 3,
+    "start_character": 5,
+    "end_line": 3,
+    "end_character": 10
   }
 }
 ```
