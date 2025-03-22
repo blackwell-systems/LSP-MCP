@@ -379,6 +379,33 @@ class LSPClient {
     this.openedDocuments.add(uri);
     this.documentVersions.set(uri, 1);
   }
+  
+  // Check if a document is open
+  isDocumentOpen(uri: string): boolean {
+    return this.openedDocuments.has(uri);
+  }
+  
+  // Close a document
+  async closeDocument(uri: string): Promise<void> {
+    // Check if initialized
+    if (!this.initialized) {
+      throw new Error("LSP client not initialized. Please call start_lsp first.");
+    }
+    
+    // Only close if document is open
+    if (this.openedDocuments.has(uri)) {
+      console.log(`Closing document: ${uri}`);
+      this.sendNotification("textDocument/didClose", {
+        textDocument: { uri }
+      });
+      
+      // Remove from tracking
+      this.openedDocuments.delete(uri);
+      this.documentVersions.delete(uri);
+    } else {
+      console.log(`Document not open: ${uri}`);
+    }
+  }
 
   async getInfoOnLocation(uri: string, position: { line: number, character: number }): Promise<string> {
     // Check if initialized, but don't auto-initialize
@@ -564,6 +591,15 @@ const GetCodeActionsArgsSchema = z.object({
   end_character: z.number().describe(`End character position`),
 });
 
+const OpenDocumentArgsSchema = z.object({
+  file_path: z.string().describe(`Path to the file to open`),
+  language_id: z.string().describe(`The programming language the file is written in`),
+});
+
+const CloseDocumentArgsSchema = z.object({
+  file_path: z.string().describe(`Path to the file to close`),
+});
+
 const RestartLSPServerArgsSchema = z.object({
   root_dir: z.string().optional().describe("The root directory for the LSP server. If not provided, the server will not be initialized automatically."),
 });
@@ -622,6 +658,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "start_lsp",
         description: "Start the LSP server with a specified root directory",
         inputSchema: zodToJsonSchema(StartLSPArgsSchema) as ToolInput,
+      },
+      {
+        name: "open_document",
+        description: "Open a file in the LSP server for analysis",
+        inputSchema: zodToJsonSchema(OpenDocumentArgsSchema) as ToolInput,
+      },
+      {
+        name: "close_document",
+        description: "Close a file in the LSP server",
+        inputSchema: zodToJsonSchema(CloseDocumentArgsSchema) as ToolInput,
       },
     ],
   };
@@ -810,6 +856,69 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`Error starting LSP server: ${errorMessage}`);
           throw new Error(`Failed to start LSP server: ${errorMessage}`);
+        }
+      }
+
+      case "open_document": {
+        const parsed = OpenDocumentArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments for open_document: ${parsed.error}`);
+        }
+
+        console.log(`Opening document: ${parsed.data.file_path}`);
+
+        // Check if LSP client is initialized
+        if (!lspClient) {
+          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+        }
+
+        try {
+          // Read the file content
+          const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
+
+          // Create a file URI
+          const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
+
+          // Open the document in the LSP server
+          await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
+          
+          return {
+            content: [{ type: "text", text: `File successfully opened: ${parsed.data.file_path}` }],
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`Error opening document: ${errorMessage}`);
+          throw new Error(`Failed to open document: ${errorMessage}`);
+        }
+      }
+
+      case "close_document": {
+        const parsed = CloseDocumentArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments for close_document: ${parsed.error}`);
+        }
+
+        console.log(`Closing document: ${parsed.data.file_path}`);
+
+        // Check if LSP client is initialized
+        if (!lspClient) {
+          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+        }
+
+        try {
+          // Create a file URI
+          const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
+
+          // Use the closeDocument method
+          await lspClient.closeDocument(fileUri);
+          
+          return {
+            content: [{ type: "text", text: `File successfully closed: ${parsed.data.file_path}` }],
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`Error closing document: ${errorMessage}`);
+          throw new Error(`Failed to close document: ${errorMessage}`);
         }
       }
 
