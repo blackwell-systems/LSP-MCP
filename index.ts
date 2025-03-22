@@ -298,7 +298,7 @@ class LSPClient {
     this.process.stdin.write(header + content);
   }
 
-  async initialize(): Promise<void> {
+  async initialize(rootDirectory: string = "."): Promise<void> {
     if (this.initialized) return;
 
     try {
@@ -308,7 +308,7 @@ class LSPClient {
         clientInfo: {
           name: "lsp-mcp-server"
         },
-        rootUri: "file://" + path.resolve("."),
+        rootUri: "file://" + path.resolve(rootDirectory),
         capabilities: {
           textDocument: {
             hover: {
@@ -336,7 +336,10 @@ class LSPClient {
   }
 
   async openDocument(uri: string, text: string, languageId: string = "haskell"): Promise<void> {
-    await this.initialize();
+    // Check if initialized, but don't auto-initialize
+    if (!this.initialized) {
+      throw new Error("LSP client not initialized. Please call start_lsp first.");
+    }
 
     // If document is already open, update it instead of reopening
     if (this.openedDocuments.has(uri)) {
@@ -378,7 +381,10 @@ class LSPClient {
   }
 
   async getInfoOnLocation(uri: string, position: { line: number, character: number }): Promise<string> {
-    await this.initialize();
+    // Check if initialized, but don't auto-initialize
+    if (!this.initialized) {
+      throw new Error("LSP client not initialized. Please call start_lsp first.");
+    }
 
     console.log(`Getting info on location: ${uri} (${position.line}:${position.character})`);
 
@@ -408,7 +414,10 @@ class LSPClient {
   }
 
   async getCompletion(uri: string, position: { line: number, character: number }): Promise<any[]> {
-    await this.initialize();
+    // Check if initialized, but don't auto-initialize
+    if (!this.initialized) {
+      throw new Error("LSP client not initialized. Please call start_lsp first.");
+    }
 
     console.log(`Getting completions at location: ${uri} (${position.line}:${position.character})`);
 
@@ -431,7 +440,10 @@ class LSPClient {
   }
 
   async getCodeActions(uri: string, range: { start: { line: number, character: number }, end: { line: number, character: number } }): Promise<any[]> {
-    await this.initialize();
+    // Check if initialized, but don't auto-initialize
+    if (!this.initialized) {
+      throw new Error("LSP client not initialized. Please call start_lsp first.");
+    }
 
     console.log(`Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`);
 
@@ -481,7 +493,7 @@ class LSPClient {
     }
   }
 
-  async restart(): Promise<void> {
+  async restart(rootDirectory?: string): Promise<void> {
     console.log("Restarting LSP server...");
 
     // If initialized, try to shut down cleanly first
@@ -517,9 +529,13 @@ class LSPClient {
     // Start a new process
     this.startProcess();
 
-    // Initialize the new connection
-    await this.initialize();
-    console.log("LSP server restarted successfully");
+    // Initialize with the provided root directory or use the stored one
+    if (rootDirectory) {
+      await this.initialize(rootDirectory);
+      console.log(`LSP server restarted and initialized with root directory: ${rootDirectory}`);
+    } else {
+      console.log("LSP server restarted but not initialized. Call start_lsp to initialize.");
+    }
   }
 }
 
@@ -549,17 +565,20 @@ const GetCodeActionsArgsSchema = z.object({
   end_character: z.number().describe(`End character position ${ZERO_BASED}`),
 });
 
-const RestartLSPServerArgsSchema = z.object({});
+const RestartLSPServerArgsSchema = z.object({
+  root_dir: z.string().optional().describe("The root directory for the LSP server. If not provided, the server will not be initialized automatically."),
+});
+
+const StartLSPArgsSchema = z.object({
+  root_dir: z.string().describe("The root directory for the LSP server"),
+});
 
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
-// Create and initialize LSP client
-const lspClient = new LSPClient(lspServerPath, lspServerArgs);
-lspClient.initialize().catch(error => {
-  console.error("Failed to initialize LSP client:", error);
-  process.exit(1);
-});
+// We'll create the LSP client but won't initialize it until start_lsp is called
+let lspClient: LSPClient;
+let rootDir = "."; // Default to current directory
 
 // Server setup
 const server = new Server(
@@ -600,6 +619,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: "Restart the LSP server process",
         inputSchema: zodToJsonSchema(RestartLSPServerArgsSchema) as ToolInput,
       },
+      {
+        name: "start_lsp",
+        description: "Start the LSP server with a specified root directory",
+        inputSchema: zodToJsonSchema(StartLSPArgsSchema) as ToolInput,
+      },
     ],
   };
 });
@@ -617,6 +641,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         console.log(`Getting info on location in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
+
+        // Check if LSP client is initialized
+        if (!lspClient) {
+          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+        }
 
         // Read the file content
         const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
@@ -648,6 +677,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         console.log(`Getting completions in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
 
+        // Check if LSP client is initialized
+        if (!lspClient) {
+          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+        }
+
         // Read the file content
         const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
 
@@ -677,6 +711,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         console.log(`Getting code actions in file: ${parsed.data.file_path} (${parsed.data.start_line}:${parsed.data.start_character} to ${parsed.data.end_line}:${parsed.data.end_character})`);
+
+        // Check if LSP client is initialized
+        if (!lspClient) {
+          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+        }
 
         // Read the file content
         const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
@@ -712,17 +751,66 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Invalid arguments for restart_lsp_server: ${parsed.error}`);
         }
 
-        console.log("Restarting LSP server...");
+        // Check if LSP client is initialized
+        if (!lspClient) {
+          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+        }
+
+        // Get the root directory from args or use the stored one
+        const restartRootDir = parsed.data.root_dir || rootDir;
+        
+        console.log(`Restarting LSP server${parsed.data.root_dir ? ` with root directory: ${parsed.data.root_dir}` : ''}...`);
 
         try {
-          await lspClient.restart();
+          // If root_dir is provided, update the stored rootDir
+          if (parsed.data.root_dir) {
+            rootDir = parsed.data.root_dir;
+          }
+          
+          // Restart with the root directory
+          await lspClient.restart(restartRootDir);
+          
           return {
-            content: [{ type: "text", text: "LSP server successfully restarted" }],
+            content: [{ 
+              type: "text", 
+              text: parsed.data.root_dir 
+                ? `LSP server successfully restarted and initialized with root directory: ${parsed.data.root_dir}`
+                : "LSP server successfully restarted" 
+            }],
           };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`Error restarting LSP server: ${errorMessage}`);
           throw new Error(`Failed to restart LSP server: ${errorMessage}`);
+        }
+      }
+      
+      case "start_lsp": {
+        const parsed = StartLSPArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments for start_lsp: ${parsed.error}`);
+        }
+
+        console.log(`Starting LSP server with root directory: ${parsed.data.root_dir}`);
+
+        try {
+          rootDir = parsed.data.root_dir;
+          
+          // Create LSP client if it doesn't exist
+          if (!lspClient) {
+            lspClient = new LSPClient(lspServerPath, lspServerArgs);
+          }
+          
+          // Initialize with the specified root directory
+          await lspClient.initialize(rootDir);
+          
+          return {
+            content: [{ type: "text", text: `LSP server successfully started with root directory: ${rootDir}` }],
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`Error starting LSP server: ${errorMessage}`);
+          throw new Error(`Failed to start LSP server: ${errorMessage}`);
         }
       }
 
@@ -774,6 +862,11 @@ async function runServer() {
   if (logFilePath) {
     console.log(`Logging to file: ${logFilePath}`);
   }
+  
+  // Create LSP client instance but don't initialize yet
+  // Initialization will happen when start_lsp is called
+  lspClient = new LSPClient(lspServerPath, lspServerArgs);
+  console.log("LSP client created. Use the start_lsp tool to initialize with a root directory.");
 }
 
 runServer().catch((error) => {

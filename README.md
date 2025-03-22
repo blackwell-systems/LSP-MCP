@@ -18,6 +18,7 @@ This enables LLMs to utilize LSPs for more accurate code suggestions.
 - `get_info_on_location`: Get hover information at a specific location in a file
 - `get_completions`: Get completion suggestions at a specific location in a file
 - `get_code_actions`: Get code actions for a specific range in a file
+- `start_lsp`: Start the LSP server with a specified root directory
 - `restart_lsp_server`: Restart the LSP server without restarting the MCP server
 - Detailed logging for debugging and auditing
 - Simple command-line interface
@@ -56,12 +57,25 @@ For the demo server:
 Run the MCP server by providing the path to the LSP executable and any arguments to pass to the LSP server:
 
 ```
-node dist/index.js /path/to/lsp [lsp-args...]
+npx tritlo/lsp-mcp /path/to/lsp [lsp-args...]
 ```
 
 For example:
 ```
-node dist/index.js /usr/bin/haskell-language-server-wrapper lsp
+npx tritlo/lsp-mcp /usr/bin/haskell-language-server-wrapper lsp
+```
+
+### Important: Starting the LSP Server
+
+With version 0.2.0 and later, you must explicitly start the LSP server by calling the `start_lsp` tool before using any LSP functionality. This ensures proper initialization with the correct root directory, which is especially important when using tools like npx:
+
+```json
+{
+  "tool": "start_lsp",
+  "arguments": {
+    "root_dir": "/path/to/your/project"
+  }
+}
 ```
 
 ### Logging
@@ -69,8 +83,8 @@ node dist/index.js /usr/bin/haskell-language-server-wrapper lsp
 You can enable logging to a file by setting the `LSP_MCP_LOG` environment variable before starting the server:
 
 ```
-export LSP_MCP_LOG=/path/to/ghc-mcp.log
-node dist/index.js /path/to/lsp-server [lsp-server-args...]
+export LSP_MCP_LOG=/path/to/lsp-mcp.log
+npx tritlo/lsp-mcp /path/to/lsp-server [lsp-server-args...]
 ```
 
 This will create a detailed log file with timestamps that captures:
@@ -156,17 +170,45 @@ Example:
 }
 ```
 
-### restart_lsp_server
+### start_lsp
 
-Restarts the LSP server process without restarting the MCP server. This is useful for recovering from LSP server issues or for applying changes to the LSP server configuration.
+Starts the LSP server with a specified root directory. This must be called before using any other LSP-related tools.
 
-No parameters required.
+Parameters:
+- `root_dir`: The root directory for the LSP server (absolute path recommended)
 
 Example:
 ```json
 {
+  "tool": "start_lsp",
+  "arguments": {
+    "root_dir": "/path/to/your/project"
+  }
+}
+```
+
+### restart_lsp_server
+
+Restarts the LSP server process without restarting the MCP server. This is useful for recovering from LSP server issues or for applying changes to the LSP server configuration.
+
+Parameters:
+- `root_dir`: (Optional) The root directory for the LSP server. If provided, the server will be initialized with this directory after restart.
+
+Example without root_dir (uses previously set root directory):
+```json
+{
   "tool": "restart_lsp_server",
   "arguments": {}
+}
+```
+
+Example with root_dir:
+```json
+{
+  "tool": "restart_lsp_server",
+  "arguments": {
+    "root_dir": "/path/to/your/project"
+  }
 }
 ```
 
@@ -177,9 +219,9 @@ Example:
   "mcpServers": {
     "lsp-mcp": {
       "type": "stdio",
-      "command": "node",
+      "command": "npx",
       "args": [
-        "./dist/index.js",
+        "tritlo/lsp-mcp",
         "<path-to-lsp>",
         "<lsp-args>"
       ]
