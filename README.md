@@ -142,6 +142,23 @@ Example:
 }
 ```
 
+## Configuration:
+
+```json
+{
+  "mcpServers": {
+    "lsp-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "./dist/index.js",
+        "<path-to-lsp>",
+        "<lsp-args>"
+      ]
+    }
+  }
+}
+
 ## Troubleshooting
 
 - If the server fails to start, make sure the path to the LSP executable is correct
@@ -150,6 +167,8 @@ Example:
 ## License
 
 MIT License
+
+
 
 ## Acknowledgments
 
