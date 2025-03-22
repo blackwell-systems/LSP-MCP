@@ -228,6 +228,7 @@ Example with root_dir:
     }
   }
 }
+```
 
 ## Troubleshooting
 
