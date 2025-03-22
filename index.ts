@@ -268,6 +268,13 @@ class LSPClient {
   private handleData(data: Buffer): void {
     // Append new data to buffer
     this.buffer += data.toString();
+    
+    // Implement a safety limit to prevent excessive buffer growth
+    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
+    if (this.buffer.length > MAX_BUFFER_SIZE) {
+      logError(`Buffer size exceeded ${MAX_BUFFER_SIZE} bytes, clearing buffer to prevent memory issues`);
+      this.buffer = this.buffer.substring(this.buffer.length - MAX_BUFFER_SIZE);
+    }
 
     // Process complete messages
     while (true) {
@@ -277,6 +284,13 @@ class LSPClient {
 
       const contentLength = parseInt(headerMatch[1], 10);
       const headerEnd = headerMatch[0].length;
+      
+      // Prevent processing unreasonably large messages
+      if (contentLength > MAX_BUFFER_SIZE) {
+        logError(`Received message with content length ${contentLength} exceeds maximum size, skipping`);
+        this.buffer = this.buffer.substring(headerEnd + contentLength);
+        continue;
+      }
 
       // Check if we have the complete message (excluding the header)
       if (this.buffer.length < headerEnd + contentLength) break; // Message not complete yet
@@ -285,21 +299,21 @@ class LSPClient {
       let content = this.buffer.substring(headerEnd, headerEnd + contentLength);
       // Make the parsing more robust by ensuring content ends with a closing brace
       if (content[content.length - 1] !== '}') {
-        console.log("Content doesn't end with '}', adjusting...");
+        debug("Content doesn't end with '}', adjusting...");
         const lastBraceIndex = content.lastIndexOf('}');
         if (lastBraceIndex !== -1) {
           const actualContentLength = lastBraceIndex + 1;
-          console.log(`Adjusted content length from ${contentLength} to ${actualContentLength}`);
+          debug(`Adjusted content length from ${contentLength} to ${actualContentLength}`);
           content = content.substring(0, actualContentLength);
           // Update buffer position based on actual content length
           this.buffer = this.buffer.substring(headerEnd + actualContentLength);
         } else {
-          console.log("No closing brace found, using original content length");
+          debug("No closing brace found, using original content length");
           // No closing brace found, use original approach
           this.buffer = this.buffer.substring(headerEnd + contentLength);
         }
       } else {
-        console.log("Content ends with '}', no adjustment needed");
+        debug("Content ends with '}', no adjustment needed");
         // Content looks good, remove precisely this processed message from buffer
         this.buffer = this.buffer.substring(headerEnd + contentLength);
       }
@@ -311,7 +325,7 @@ class LSPClient {
         this.messageQueue.push(message);
         this.processMessageQueue();
       } catch (error) {
-        console.error("Failed to parse LSP message:", error);
+        logError("Failed to parse LSP message:", error);
       }
     }
   }
@@ -883,38 +897,43 @@ let rootDir = "."; // Default to current directory
 const server = new Server(
   {
     name: "lsp-mcp-server",
-    version: "0.1.0",
-    description: "MCP server for Hover and Completions via LSP"
+    version: "0.2.0",
+    description: "MCP server for Language Server Protocol (LSP) integration, providing hover information, code completions, diagnostics, and code actions with resource-based access"
   },
   {
     capabilities: {
-      tools: {},
+      tools: {
+        description: "A set of tools for interacting with the Language Server Protocol (LSP). These tools provide access to language-specific features like code completion, hover information, diagnostics, and code actions. Before using any LSP features, you must first call start_lsp with the project root directory, then open the files you wish to analyze."
+      },
       resources: {
+        description: "URI-based access to Language Server Protocol (LSP) features. These resources provide a way to access language-specific features like diagnostics, hover information, and completions through a URI pattern. Before using these resources, you must first call the start_lsp tool with the project root directory, then open the files you wish to analyze using the open_document tool.",
         templates: [
           {
             name: "lsp-diagnostics",
             scheme: "lsp-diagnostics",
             pattern: "lsp-diagnostics://{file_path}",
-            description: "Get diagnostic messages (errors, warnings) for a specific file or all files",
+            description: "Get diagnostic messages (errors, warnings) for a specific file or all files. Use this resource to identify problems in code files such as syntax errors, type mismatches, or other issues detected by the language server. When used without a file_path, returns diagnostics for all open files. Supports live updates through subscriptions.",
             subscribe: true,
           },
           {
             name: "lsp-hover",
             scheme: "lsp-hover",
             pattern: "lsp-hover://{file_path}?line={line}&character={character}&language_id={language_id}",
-            description: "Get hover information for a specific location in a file",
+            description: "Get hover information for a specific location in a file. Use this resource to retrieve type information, documentation, and other contextual details about symbols in your code. Particularly useful for understanding variable types, function signatures, and module documentation at a specific cursor position.",
             subscribe: false,
           },
           {
             name: "lsp-completions",
             scheme: "lsp-completions",
             pattern: "lsp-completions://{file_path}?line={line}&character={character}&language_id={language_id}",
-            description: "Get completion suggestions for a specific location in a file",
+            description: "Get completion suggestions for a specific location in a file. Use this resource to obtain code completion options based on the current context, including variable names, function calls, object properties, and more. Helpful for code assistance and auto-completion features at a specific cursor position.",
             subscribe: false,
           }
         ]
       },
-      logging: {},
+      logging: {
+        description: "Logging capabilities for the LSP MCP server. Use the set_log_level tool to control logging verbosity. The server sends notifications about important events, errors, and diagnostic updates."
+      },
     },
   },
 );
@@ -926,47 +945,47 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "get_info_on_location",
-        description: "Get information on a specific location in a file via LSP hover",
+        description: "Get information on a specific location in a file via LSP hover. Use this tool to retrieve detailed type information, documentation, and other contextual details about symbols in your code. Particularly useful for understanding variable types, function signatures, and module documentation at a specific cursor position. Requires the file to be opened first.",
         inputSchema: zodToJsonSchema(GetInfoOnLocationArgsSchema) as ToolInput,
       },
       {
         name: "get_completions",
-        description: "Get completion suggestions at a specific location in a file",
+        description: "Get completion suggestions at a specific location in a file. Use this tool to retrieve code completion options based on the current context, including variable names, function calls, object properties, and more. Helpful for code assistance and auto-completion at a specific cursor position. Requires the file to be opened first.",
         inputSchema: zodToJsonSchema(GetCompletionsArgsSchema) as ToolInput,
       },
       {
         name: "get_code_actions",
-        description: "Get code actions for a specific range in a file",
+        description: "Get code actions for a specific range in a file. Use this tool to obtain available refactorings, quick fixes, and other code modifications that can be applied to a selected code range. Examples include adding imports, fixing errors, or implementing interfaces. Requires the file to be opened first.",
         inputSchema: zodToJsonSchema(GetCodeActionsArgsSchema) as ToolInput,
       },
       {
         name: "restart_lsp_server",
-        description: "Restart the LSP server process",
+        description: "Restart the LSP server process. Use this tool to reset the LSP server if it becomes unresponsive, has stale data, or when you need to apply configuration changes. Can optionally reinitialize with a new root directory. Useful for troubleshooting language server issues or when switching projects.",
         inputSchema: zodToJsonSchema(RestartLSPServerArgsSchema) as ToolInput,
       },
       {
         name: "start_lsp",
-        description: "Start the LSP server with a specified root directory",
+        description: "Start the LSP server with a specified root directory. IMPORTANT: This tool must be called before using any other LSP functionality. The root directory should point to the project's base folder, which typically contains configuration files like tsconfig.json, package.json, or other language-specific project files. All file paths in other tool calls will be resolved relative to this root.",
         inputSchema: zodToJsonSchema(StartLSPArgsSchema) as ToolInput,
       },
       {
         name: "open_document",
-        description: "Open a file in the LSP server for analysis",
+        description: "Open a file in the LSP server for analysis. Use this tool before performing operations like getting diagnostics, hover information, or completions for a file. The file remains open for continued analysis until explicitly closed. The language_id parameter tells the server which language service to use (e.g., 'typescript', 'javascript', 'haskell').",
         inputSchema: zodToJsonSchema(OpenDocumentArgsSchema) as ToolInput,
       },
       {
         name: "close_document",
-        description: "Close a file in the LSP server",
+        description: "Close a file in the LSP server. Use this tool when you're done with a file to free up resources and reduce memory usage. It's good practice to close files that are no longer being actively analyzed, especially in long-running sessions or when working with large codebases.",
         inputSchema: zodToJsonSchema(CloseDocumentArgsSchema) as ToolInput,
       },
       {
         name: "get_diagnostics",
-        description: "Get diagnostic messages (errors, warnings) for files",
+        description: "Get diagnostic messages (errors, warnings) for files. Use this tool to identify problems in code files such as syntax errors, type mismatches, or other issues detected by the language server. When used without a file_path, returns diagnostics for all open files. Requires files to be opened first.",
         inputSchema: zodToJsonSchema(GetDiagnosticsArgsSchema) as ToolInput,
       },
       {
         name: "set_log_level",
-        description: "Set the server logging level",
+        description: "Set the server logging level. Use this tool to control the verbosity of logs generated by the LSP MCP server. Available levels from least to most verbose: emergency, alert, critical, error, warning, notice, info, debug. Increasing verbosity can help troubleshoot issues but may generate large amounts of output.",
         inputSchema: zodToJsonSchema(SetLogLevelArgsSchema) as ToolInput,
       },
     ],
@@ -1237,7 +1256,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           // Get diagnostics for a specific file or all files
           if (parsed.data.file_path) {
             // For a specific file
-            console.log(`Getting diagnostics for file: ${parsed.data.file_path}`);
+            debug(`Getting diagnostics for file: ${parsed.data.file_path}`);
             const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
 
             // Verify the file is open
@@ -1313,7 +1332,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 process.on('exit', async () => {
   info("Shutting down MCP server...");
   try {
-    await lspClient.shutdown();
+    // Only attempt shutdown if lspClient exists and is initialized
+    if (lspClient) {
+      await lspClient.shutdown();
+    }
   } catch (error) {
     warning("Error during shutdown:", error);
   }
@@ -1401,9 +1423,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
         // Get the file path (remove the leading lsp-hover:// protocol part)
         // Ensure we handle paths correctly - URL parsing can remove the leading slash
-        const filePath = decodeURIComponent(hoverUri.pathname).startsWith('/') 
-          ? decodeURIComponent(hoverUri.pathname) 
-          : '/' + decodeURIComponent(hoverUri.pathname);
+        let decodedPath = decodeURIComponent(hoverUri.pathname);
+        // Normalize path to ensure it starts with a slash
+        const filePath = path.posix.normalize(decodedPath.startsWith('/') ? decodedPath : '/' + decodedPath);
 
         // Get the query parameters
         const lineParam = hoverUri.searchParams.get('line');
@@ -1465,9 +1487,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
         // Get the file path (remove the leading lsp-completions:// protocol part)
         // Ensure we handle paths correctly - URL parsing can remove the leading slash
-        const filePath = decodeURIComponent(completionsUri.pathname).startsWith('/') 
-          ? decodeURIComponent(completionsUri.pathname) 
-          : '/' + decodeURIComponent(completionsUri.pathname);
+        let decodedPath = decodeURIComponent(completionsUri.pathname);
+        // Normalize path to ensure it starts with a slash
+        const filePath = path.posix.normalize(decodedPath.startsWith('/') ? decodedPath : '/' + decodedPath);
 
         // Get the query parameters
         const lineParam = completionsUri.searchParams.get('line');
