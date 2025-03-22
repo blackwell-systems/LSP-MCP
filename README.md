@@ -15,8 +15,9 @@ This enables LLMs to utilize LSPs for more accurate code suggestions.
 
 ## Features
 
-- `get_info_on_location`: Get hover information at a specific location in a Haskell file
-- `get_completions`: Get completion suggestions at a specific location in a Haskell file
+- `get_info_on_location`: Get hover information at a specific location in a file
+- `get_completions`: Get completion suggestions at a specific location in a file
+- `restart_lsp_server`: Restart the LSP server without restarting the MCP server
 - Detailed logging for debugging and auditing
 - Simple command-line interface
 
@@ -51,10 +52,15 @@ For the demo server:
 
 ## Usage
 
-Run the MCP server by providing the path to the LSP executable:
+Run the MCP server by providing the path to the LSP executable and any arguments to pass to the LSP server:
 
 ```
-node dist/index.js /path/to/lsp
+node dist/index.js /path/to/lsp [lsp-args...]
+```
+
+For example:
+```
+node dist/index.js /usr/bin/haskell-language-server-wrapper lsp
 ```
 
 ### Logging
@@ -63,7 +69,7 @@ You can enable logging to a file by setting the `LSP_MCP_LOG` environment variab
 
 ```
 export LSP_MCP_LOG=/path/to/ghc-mcp.log
-node dist/index.js /path/to/lsp-server
+node dist/index.js /path/to/lsp-server [lsp-server-args...]
 ```
 
 This will create a detailed log file with timestamps that captures:
@@ -78,10 +84,11 @@ The server provides the following MCP tools:
 
 ### get_info_on_location
 
-Gets hover information at a specific location in a Haskell file.
+Gets hover information at a specific location in a file.
 
 Parameters:
-- `file_path`: Path to the Haskell file
+- `file_path`: Path to the file
+- `language_id`: The programming language the file is written in (e.g., "haskell")
 - `line`: Line number (0-based)
 - `character`: Character position (0-based)
 
@@ -91,6 +98,7 @@ Example:
   "tool": "get_info_on_location",
   "arguments": {
     "file_path": "/path/to/your/file",
+    "language_id": "haskell",
     "line": 3,
     "character": 5
   }
@@ -103,6 +111,7 @@ Gets completion suggestions at a specific location in a file.
 
 Parameters:
 - `file_path`: Path to the file
+- `language_id`: The programming language the file is written in (e.g., "haskell")
 - `line`: Line number (0-based)
 - `character`: Character position (0-based)
 
@@ -112,9 +121,24 @@ Example:
   "tool": "get_completions",
   "arguments": {
     "file_path": "/path/to/your/file",
+    "language_id": "haskell",
     "line": 3,
     "character": 10
   }
+}
+```
+
+### restart_lsp_server
+
+Restarts the LSP server process without restarting the MCP server. This is useful for recovering from LSP server issues or for applying changes to the LSP server configuration.
+
+No parameters required.
+
+Example:
+```json
+{
+  "tool": "restart_lsp_server",
+  "arguments": {}
 }
 ```
 

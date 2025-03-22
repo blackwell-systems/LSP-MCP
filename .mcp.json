@@ -5,7 +5,8 @@
       "command": "node",
       "args": [
         "./dist/index.js",
-        "./dist-newstyle/build/x86_64-linux/ghc-9.6.6/ghc-mcp-0.1.0.0/x/ghc-mcp/build/ghc-mcp/ghc-mcp"
+        "/home/tritlo/.ghcup/bin/haskell-language-server-wrapper",
+        "lsp"
       ],
       "env": {
         "LSP_MCP_LOG": "./lsp-mcp.log"
