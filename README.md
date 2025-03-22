@@ -122,12 +122,12 @@ The test project is located in `test/ts-project/` and contains TypeScript files 
 Run the MCP server by providing the path to the LSP executable and any arguments to pass to the LSP server:
 
 ```
-npx tritlo/lsp-mcp /path/to/lsp [lsp-args...]
+npx tritlo/lsp-mcp <language> /path/to/lsp [lsp-args...]
 ```
 
 For example:
 ```
-npx tritlo/lsp-mcp /usr/bin/haskell-language-server-wrapper lsp
+npx tritlo/lsp-mcp haskell /usr/bin/haskell-language-server-wrapper lsp
 ```
 
 ### Important: Starting the LSP Server
