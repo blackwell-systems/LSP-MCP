@@ -268,7 +268,7 @@ class LSPClient {
   private handleData(data: Buffer): void {
     // Append new data to buffer
     this.buffer += data.toString();
-    
+
     // Implement a safety limit to prevent excessive buffer growth
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
     if (this.buffer.length > MAX_BUFFER_SIZE) {
@@ -284,7 +284,7 @@ class LSPClient {
 
       const contentLength = parseInt(headerMatch[1], 10);
       const headerEnd = headerMatch[0].length;
-      
+
       // Prevent processing unreasonably large messages
       if (contentLength > MAX_BUFFER_SIZE) {
         logError(`Received message with content length ${contentLength} exceeds maximum size, skipping`);
@@ -992,332 +992,326 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
+// Type definition for all handler functions
+type ToolHandler = (args: any) => Promise<{ content: Array<{ type: string, text: string }>, isError?: boolean }>;
+
+// Check if LSP client is initialized
+const checkLspClientInitialized = (): void => {
+  if (!lspClient) {
+    throw new Error("LSP server not started. Call start_lsp first with a root directory.");
+  }
+};
+
+// Create a file URI from a file path
+const createFileUri = (filePath: string): string => {
+  return `file://${path.resolve(filePath)}`;
+};
+
+// Define handlers for each tool
+const toolHandlers: Record<string, {
+  schema: z.ZodSchema<any>,
+  handler: ToolHandler
+}> = {
+  "get_info_on_location": {
+    schema: GetInfoOnLocationArgsSchema,
+    handler: async (args) => {
+      debug(`Getting info on location in file: ${args.file_path} (${args.line}:${args.character})`);
+
+      checkLspClientInitialized();
+
+      // Read the file content
+      const fileContent = await fs.readFile(args.file_path, 'utf-8');
+
+      // Create a file URI
+      const fileUri = createFileUri(args.file_path);
+
+      // Open the document in the LSP server (won't reopen if already open)
+      await lspClient.openDocument(fileUri, fileContent, args.language_id);
+
+      // Get information at the location
+      const text = await lspClient.getInfoOnLocation(fileUri, {
+        line: args.line - 1, // LSP is 0-based
+        character: args.character - 1
+      });
+
+      debug(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
+
+      return {
+        content: [{ type: "text", text }],
+      };
+    }
+  },
+
+  "get_completions": {
+    schema: GetCompletionsArgsSchema,
+    handler: async (args) => {
+      debug(`Getting completions in file: ${args.file_path} (${args.line}:${args.character})`);
+
+      checkLspClientInitialized();
+
+      // Read the file content
+      const fileContent = await fs.readFile(args.file_path, 'utf-8');
+
+      // Create a file URI
+      const fileUri = createFileUri(args.file_path);
+
+      // Open the document in the LSP server (won't reopen if already open)
+      await lspClient.openDocument(fileUri, fileContent, args.language_id);
+
+      // Get completions at the location
+      const completions = await lspClient.getCompletion(fileUri, {
+        line: args.line - 1, // LSP is 0-based
+        character: args.character - 1
+      });
+
+      debug(`Returned ${completions.length} completions`);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
+      };
+    }
+  },
+
+  "get_code_actions": {
+    schema: GetCodeActionsArgsSchema,
+    handler: async (args) => {
+      debug(`Getting code actions in file: ${args.file_path} (${args.start_line}:${args.start_character} to ${args.end_line}:${args.end_character})`);
+
+      checkLspClientInitialized();
+
+      // Read the file content
+      const fileContent = await fs.readFile(args.file_path, 'utf-8');
+
+      // Create a file URI
+      const fileUri = createFileUri(args.file_path);
+
+      // Open the document in the LSP server (won't reopen if already open)
+      await lspClient.openDocument(fileUri, fileContent, args.language_id);
+
+      // Get code actions for the range
+      const codeActions = await lspClient.getCodeActions(fileUri, {
+        start: {
+          line: args.start_line - 1, // LSP is 0-based
+          character: args.start_character - 1
+        },
+        end: {
+          line: args.end_line - 1,
+          character: args.end_character - 1
+        }
+      });
+
+      debug(`Returned ${codeActions.length} code actions`);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(codeActions, null, 2) }],
+      };
+    }
+  },
+
+  "restart_lsp_server": {
+    schema: RestartLSPServerArgsSchema,
+    handler: async (args) => {
+      checkLspClientInitialized();
+
+      // Get the root directory from args or use the stored one
+      const restartRootDir = args.root_dir || rootDir;
+
+      info(`Restarting LSP server${args.root_dir ? ` with root directory: ${args.root_dir}` : ''}...`);
+
+      try {
+        // If root_dir is provided, update the stored rootDir
+        if (args.root_dir) {
+          rootDir = args.root_dir;
+        }
+
+        // Restart with the root directory
+        await lspClient.restart(restartRootDir);
+
+        return {
+          content: [{
+            type: "text",
+            text: args.root_dir
+              ? `LSP server successfully restarted and initialized with root directory: ${args.root_dir}`
+              : "LSP server successfully restarted"
+          }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error restarting LSP server: ${errorMessage}`);
+        throw new Error(`Failed to restart LSP server: ${errorMessage}`);
+      }
+    }
+  },
+
+  "start_lsp": {
+    schema: StartLSPArgsSchema,
+    handler: async (args) => {
+      info(`Starting LSP server with root directory: ${args.root_dir}`);
+
+      try {
+        rootDir = args.root_dir;
+
+        // Create LSP client if it doesn't exist
+        if (!lspClient) {
+          lspClient = new LSPClient(lspServerPath, lspServerArgs);
+        }
+
+        // Initialize with the specified root directory
+        await lspClient.initialize(rootDir);
+
+        return {
+          content: [{ type: "text", text: `LSP server successfully started with root directory: ${rootDir}` }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error starting LSP server: ${errorMessage}`);
+        throw new Error(`Failed to start LSP server: ${errorMessage}`);
+      }
+    }
+  },
+
+  "open_document": {
+    schema: OpenDocumentArgsSchema,
+    handler: async (args) => {
+      debug(`Opening document: ${args.file_path}`);
+
+      checkLspClientInitialized();
+
+      try {
+        // Read the file content
+        const fileContent = await fs.readFile(args.file_path, 'utf-8');
+
+        // Create a file URI
+        const fileUri = createFileUri(args.file_path);
+
+        // Open the document in the LSP server
+        await lspClient.openDocument(fileUri, fileContent, args.language_id);
+
+        return {
+          content: [{ type: "text", text: `File successfully opened: ${args.file_path}` }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error opening document: ${errorMessage}`);
+        throw new Error(`Failed to open document: ${errorMessage}`);
+      }
+    }
+  },
+
+  "close_document": {
+    schema: CloseDocumentArgsSchema,
+    handler: async (args) => {
+      debug(`Closing document: ${args.file_path}`);
+
+      checkLspClientInitialized();
+
+      try {
+        // Create a file URI
+        const fileUri = createFileUri(args.file_path);
+
+        // Use the closeDocument method
+        await lspClient.closeDocument(fileUri);
+
+        return {
+          content: [{ type: "text", text: `File successfully closed: ${args.file_path}` }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error closing document: ${errorMessage}`);
+        throw new Error(`Failed to close document: ${errorMessage}`);
+      }
+    }
+  },
+
+  "get_diagnostics": {
+    schema: GetDiagnosticsArgsSchema,
+    handler: async (args) => {
+      checkLspClientInitialized();
+
+      try {
+        // Get diagnostics for a specific file or all files
+        if (args.file_path) {
+          // For a specific file
+          debug(`Getting diagnostics for file: ${args.file_path}`);
+          const fileUri = createFileUri(args.file_path);
+
+          // Verify the file is open
+          if (!lspClient.isDocumentOpen(fileUri)) {
+            throw new Error(`File ${args.file_path} is not open. Please open the file with open_document before requesting diagnostics.`);
+          }
+
+          const diagnostics = lspClient.getDiagnostics(fileUri);
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ [fileUri]: diagnostics }, null, 2)
+            }],
+          };
+        } else {
+          // For all files
+          debug("Getting diagnostics for all files");
+          const allDiagnostics = lspClient.getAllDiagnostics();
+
+          // Convert Map to object for JSON serialization
+          const diagnosticsObject: Record<string, any[]> = {};
+          allDiagnostics.forEach((value, key) => {
+            // Only include diagnostics for open files
+            if (lspClient.isDocumentOpen(key)) {
+              diagnosticsObject[key] = value;
+            }
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(diagnosticsObject, null, 2)
+            }],
+          };
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error getting diagnostics: ${errorMessage}`);
+        throw new Error(`Failed to get diagnostics: ${errorMessage}`);
+      }
+    }
+  },
+
+  "set_log_level": {
+    schema: SetLogLevelArgsSchema,
+    handler: async (args) => {
+      // Set the log level
+      const { level } = args;
+      setLogLevel(level);
+
+      return {
+        content: [{ type: "text", text: `Log level set to: ${level}` }],
+      };
+    }
+  }
+};
+
+// Handle tool requests using the toolHandlers object
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const { name, arguments: args } = request.params;
     debug(`Handling CallTool request for tool: ${name}`);
 
-    switch (name) {
-      case "get_info_on_location": {
-        const parsed = GetInfoOnLocationArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for get_info_on_location: ${parsed.error}`);
-        }
-
-        debug(`Getting info on location in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
-
-        // Check if LSP client is initialized
-        if (!lspClient) {
-          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-        }
-
-        // Read the file content
-        const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
-
-        // Create a file URI
-        const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
-
-        // Open the document in the LSP server (won't reopen if already open)
-        await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
-
-        // Get information at the location
-        const text = await lspClient.getInfoOnLocation(fileUri, {
-          line: parsed.data.line - 1, // LSP is 0-based
-          character: parsed.data.character - 1
-        });
-
-        debug(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
-
-        return {
-          content: [{ type: "text", text }],
-        };
-      }
-
-      case "get_completions": {
-        const parsed = GetCompletionsArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for get_completions: ${parsed.error}`);
-        }
-
-        debug(`Getting completions in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
-
-        // Check if LSP client is initialized
-        if (!lspClient) {
-          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-        }
-
-        // Read the file content
-        const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
-
-        // Create a file URI
-        const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
-
-        // Open the document in the LSP server (won't reopen if already open)
-        await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
-
-        // Get completions at the location
-        const completions = await lspClient.getCompletion(fileUri, {
-          line: parsed.data.line - 1, // LSP is 0-based
-          character: parsed.data.character - 1
-        });
-
-        debug(`Returned ${completions.length} completions`);
-
-        return {
-          content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
-        };
-      }
-
-      case "get_code_actions": {
-        const parsed = GetCodeActionsArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for get_code_actions: ${parsed.error}`);
-        }
-
-        debug(`Getting code actions in file: ${parsed.data.file_path} (${parsed.data.start_line}:${parsed.data.start_character} to ${parsed.data.end_line}:${parsed.data.end_character})`);
-
-        // Check if LSP client is initialized
-        if (!lspClient) {
-          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-        }
-
-        // Read the file content
-        const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
-
-        // Create a file URI
-        const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
-
-        // Open the document in the LSP server (won't reopen if already open)
-        await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
-
-        // Get code actions for the range
-        const codeActions = await lspClient.getCodeActions(fileUri, {
-          start: {
-            line: parsed.data.start_line - 1, // LSP is 0-based
-            character: parsed.data.start_character - 1
-          },
-          end: {
-            line: parsed.data.end_line - 1,
-            character: parsed.data.end_character - 1
-          }
-        });
-
-        debug(`Returned ${codeActions.length} code actions`);
-
-        return {
-          content: [{ type: "text", text: JSON.stringify(codeActions, null, 2) }],
-        };
-      }
-
-      case "restart_lsp_server": {
-        const parsed = RestartLSPServerArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for restart_lsp_server: ${parsed.error}`);
-        }
-
-        // Check if LSP client is initialized
-        if (!lspClient) {
-          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-        }
-
-        // Get the root directory from args or use the stored one
-        const restartRootDir = parsed.data.root_dir || rootDir;
-
-        info(`Restarting LSP server${parsed.data.root_dir ? ` with root directory: ${parsed.data.root_dir}` : ''}...`);
-
-        try {
-          // If root_dir is provided, update the stored rootDir
-          if (parsed.data.root_dir) {
-            rootDir = parsed.data.root_dir;
-          }
-
-          // Restart with the root directory
-          await lspClient.restart(restartRootDir);
-
-          return {
-            content: [{
-              type: "text",
-              text: parsed.data.root_dir
-                ? `LSP server successfully restarted and initialized with root directory: ${parsed.data.root_dir}`
-                : "LSP server successfully restarted"
-            }],
-          };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logError(`Error restarting LSP server: ${errorMessage}`);
-          throw new Error(`Failed to restart LSP server: ${errorMessage}`);
-        }
-      }
-
-      case "start_lsp": {
-        const parsed = StartLSPArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for start_lsp: ${parsed.error}`);
-        }
-
-        info(`Starting LSP server with root directory: ${parsed.data.root_dir}`);
-
-        try {
-          rootDir = parsed.data.root_dir;
-
-          // Create LSP client if it doesn't exist
-          if (!lspClient) {
-            lspClient = new LSPClient(lspServerPath, lspServerArgs);
-          }
-
-          // Initialize with the specified root directory
-          await lspClient.initialize(rootDir);
-
-          return {
-            content: [{ type: "text", text: `LSP server successfully started with root directory: ${rootDir}` }],
-          };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logError(`Error starting LSP server: ${errorMessage}`);
-          throw new Error(`Failed to start LSP server: ${errorMessage}`);
-        }
-      }
-
-      case "open_document": {
-        const parsed = OpenDocumentArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for open_document: ${parsed.error}`);
-        }
-
-        debug(`Opening document: ${parsed.data.file_path}`);
-
-        // Check if LSP client is initialized
-        if (!lspClient) {
-          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-        }
-
-        try {
-          // Read the file content
-          const fileContent = await fs.readFile(parsed.data.file_path, 'utf-8');
-
-          // Create a file URI
-          const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
-
-          // Open the document in the LSP server
-          await lspClient.openDocument(fileUri, fileContent, parsed.data.language_id);
-
-          return {
-            content: [{ type: "text", text: `File successfully opened: ${parsed.data.file_path}` }],
-          };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logError(`Error opening document: ${errorMessage}`);
-          throw new Error(`Failed to open document: ${errorMessage}`);
-        }
-      }
-
-      case "close_document": {
-        const parsed = CloseDocumentArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for close_document: ${parsed.error}`);
-        }
-
-        debug(`Closing document: ${parsed.data.file_path}`);
-
-        // Check if LSP client is initialized
-        if (!lspClient) {
-          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-        }
-
-        try {
-          // Create a file URI
-          const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
-
-          // Use the closeDocument method
-          await lspClient.closeDocument(fileUri);
-
-          return {
-            content: [{ type: "text", text: `File successfully closed: ${parsed.data.file_path}` }],
-          };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logError(`Error closing document: ${errorMessage}`);
-          throw new Error(`Failed to close document: ${errorMessage}`);
-        }
-      }
-
-      case "get_diagnostics": {
-        const parsed = GetDiagnosticsArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for get_diagnostics: ${parsed.error}`);
-        }
-
-        // Check if LSP client is initialized
-        if (!lspClient) {
-          throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-        }
-
-        try {
-          // Get diagnostics for a specific file or all files
-          if (parsed.data.file_path) {
-            // For a specific file
-            debug(`Getting diagnostics for file: ${parsed.data.file_path}`);
-            const fileUri = `file://${path.resolve(parsed.data.file_path)}`;
-
-            // Verify the file is open
-            if (!lspClient.isDocumentOpen(fileUri)) {
-              throw new Error(`File ${parsed.data.file_path} is not open. Please open the file with open_document before requesting diagnostics.`);
-            }
-
-            const diagnostics = lspClient.getDiagnostics(fileUri);
-
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify({ [fileUri]: diagnostics }, null, 2)
-              }],
-            };
-          } else {
-            // For all files
-            debug("Getting diagnostics for all files");
-            const allDiagnostics = lspClient.getAllDiagnostics();
-
-            // Convert Map to object for JSON serialization
-            const diagnosticsObject: Record<string, any[]> = {};
-            allDiagnostics.forEach((value, key) => {
-              // Only include diagnostics for open files
-              if (lspClient.isDocumentOpen(key)) {
-                diagnosticsObject[key] = value;
-              }
-            });
-
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify(diagnosticsObject, null, 2)
-              }],
-            };
-          }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logError(`Error getting diagnostics: ${errorMessage}`);
-          throw new Error(`Failed to get diagnostics: ${errorMessage}`);
-        }
-      }
-
-      case "set_log_level": {
-        const parsed = SetLogLevelArgsSchema.safeParse(args);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments for set_log_level: ${parsed.error}`);
-        }
-
-        // Set the log level
-        const { level } = parsed.data;
-        setLogLevel(level);
-
-        return {
-          content: [{ type: "text", text: `Log level set to: ${level}` }],
-        };
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+    // Look up the handler for this tool
+    const toolHandler = toolHandlers[name];
+    if (!toolHandler) {
+      throw new Error(`Unknown tool: ${name}`);
     }
+
+    // Validate the arguments against the schema
+    const parsed = toolHandler.schema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for ${name}: ${parsed.error}`);
+    }
+
+    // Call the handler with the validated arguments
+    return await toolHandler.handler(parsed.data);
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logError(`Error handling tool request: ${errorMessage}`);
@@ -1356,191 +1350,180 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
+// Helper function to parse a URI path
+const parseUriPath = (uri: URL): string => {
+  // Ensure we handle paths correctly - URL parsing can remove the leading slash
+  let decodedPath = decodeURIComponent(uri.pathname);
+  // Normalize path to ensure it starts with a slash
+  return path.posix.normalize(decodedPath.startsWith('/') ? decodedPath : '/' + decodedPath);
+};
+
+// Helper function to parse location parameters
+const parseLocationParams = (uri: URL): { filePath: string, line: number, character: number, languageId: string } => {
+  // Get the file path
+  const filePath = parseUriPath(uri);
+
+  // Get the query parameters
+  const lineParam = uri.searchParams.get('line');
+  const characterParam = uri.searchParams.get('character');
+  const languageId = uri.searchParams.get('language_id');
+
+  if (!languageId) {
+    throw new Error("language_id parameter is required");
+  }
+
+  if (!filePath || !lineParam || !characterParam) {
+    throw new Error("Required parameters: file_path, line, character");
+  }
+
+  // Parse line and character as numbers
+  const line = parseInt(lineParam, 10);
+  const character = parseInt(characterParam, 10);
+
+  if (isNaN(line) || isNaN(character)) {
+    throw new Error("Line and character must be valid numbers");
+  }
+
+  return { filePath, line, character, languageId };
+};
+
+// Resource handler types and implementation
+type ResourceHandler = (uri: string) => Promise<{ contents: Array<{ type: string, text: string, uri: string }> }>;
+
+const resourceHandlers: Record<string, ResourceHandler> = {
+  // Handler for lsp-diagnostics://
+  'lsp-diagnostics://': async (uri: string) => {
+    checkLspClientInitialized();
+
+    // Extract the file path parameter from the URI
+    // lsp-diagnostics:// is 18 characters
+    const filePath = uri.slice(18);
+
+    let diagnosticsContent: string;
+
+    if (filePath) {
+      // For a specific file
+      debug(`Getting diagnostics for file: ${filePath}`);
+      const fileUri = createFileUri(filePath);
+
+      // Verify the file is open
+      if (!lspClient.isDocumentOpen(fileUri)) {
+        throw new Error(`File ${filePath} is not open. Please open the file with open_document before requesting diagnostics.`);
+      }
+
+      const diagnostics = lspClient.getDiagnostics(fileUri);
+      diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
+    } else {
+      // For all files
+      debug("Getting diagnostics for all files");
+      const allDiagnostics = lspClient.getAllDiagnostics();
+
+      // Convert Map to object for JSON serialization
+      const diagnosticsObject: Record<string, any[]> = {};
+      allDiagnostics.forEach((value, key) => {
+        // Only include diagnostics for open files
+        if (lspClient.isDocumentOpen(key)) {
+          diagnosticsObject[key] = value;
+        }
+      });
+
+      diagnosticsContent = JSON.stringify(diagnosticsObject, null, 2);
+    }
+
+    return {
+      contents: [{ type: "text", text: diagnosticsContent, uri }],
+    };
+  },
+
+  // Handler for lsp-hover://
+  'lsp-hover://': async (uri: string) => {
+    checkLspClientInitialized();
+
+    try {
+      // Extract parameters from URI
+      // Format: lsp-hover://{file_path}?line={line}&character={character}&language_id={language_id}
+      const hoverUri = new URL(uri);
+      const { filePath, line, character, languageId } = parseLocationParams(hoverUri);
+
+      debug(`Getting hover info for ${filePath} at line ${line}, character ${character}`);
+
+      // Read the file content
+      const fileContent = await fs.readFile(filePath, 'utf-8');
+
+      // Create a file URI
+      const fileUri = createFileUri(filePath);
+
+      // Open the document in the LSP server (won't reopen if already open)
+      await lspClient.openDocument(fileUri, fileContent, languageId);
+
+      // Get information at the location (LSP is 0-based)
+      const hoverText = await lspClient.getInfoOnLocation(fileUri, {
+        line: line - 1,
+        character: character - 1
+      });
+
+      debug(`Got hover information: ${hoverText.slice(0, 100)}${hoverText.length > 100 ? '...' : ''}`);
+
+      return {
+        contents: [{ type: "text", text: hoverText, uri }],
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logError(`Error parsing hover URI or getting hover information: ${errorMessage}`);
+      throw new Error(`Error processing hover request: ${errorMessage}`);
+    }
+  },
+
+  // Handler for lsp-completions://
+  'lsp-completions://': async (uri: string) => {
+    checkLspClientInitialized();
+
+    try {
+      // Extract parameters from URI
+      // Format: lsp-completions://{file_path}?line={line}&character={character}&language_id={language_id}
+      const completionsUri = new URL(uri);
+      const { filePath, line, character, languageId } = parseLocationParams(completionsUri);
+
+      debug(`Getting completions for ${filePath} at line ${line}, character ${character}`);
+
+      // Read the file content
+      const fileContent = await fs.readFile(filePath, 'utf-8');
+
+      // Create a file URI
+      const fileUri = createFileUri(filePath);
+
+      // Open the document in the LSP server (won't reopen if already open)
+      await lspClient.openDocument(fileUri, fileContent, languageId);
+
+      // Get completions at the location (LSP is 0-based)
+      const completions = await lspClient.getCompletion(fileUri, {
+        line: line - 1,
+        character: character - 1
+      });
+
+      debug(`Got ${completions.length} completions`);
+
+      return {
+        contents: [{ type: "text", text: JSON.stringify(completions, null, 2), uri }],
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logError(`Error parsing completions URI or getting completions: ${errorMessage}`);
+      throw new Error(`Error processing completions request: ${errorMessage}`);
+    }
+  }
+};
+
 // Resource handler for diagnostics, hover, and completions
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   try {
-    debug(`Handling ReadResource request for URI: ${request.params.uri}`);
     const uri = request.params.uri;
+    debug(`Handling ReadResource request for URI: ${uri}`);
 
-    // Parse the lsp-diagnostics URI
-    if (uri.startsWith('lsp-diagnostics://')) {
-      // Check if LSP client is initialized
-      if (!lspClient) {
-        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-      }
-
-      // Extract the file path parameter from the URI
-      // lsp-diagnostics:// is 18 characters
-      const filePath = uri.slice(18);
-
-      let diagnosticsContent: string;
-
-      if (filePath) {
-        // For a specific file
-        debug(`Getting diagnostics for file: ${filePath}`);
-        const fileUri = `file://${path.resolve(filePath)}`;
-
-        // Verify the file is open
-        if (!lspClient.isDocumentOpen(fileUri)) {
-          throw new Error(`File ${filePath} is not open. Please open the file with open_document before requesting diagnostics.`);
-        }
-
-        const diagnostics = lspClient.getDiagnostics(fileUri);
-        diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
-      } else {
-        // For all files
-        debug("Getting diagnostics for all files");
-        const allDiagnostics = lspClient.getAllDiagnostics();
-
-        // Convert Map to object for JSON serialization
-        const diagnosticsObject: Record<string, any[]> = {};
-        allDiagnostics.forEach((value, key) => {
-          // Only include diagnostics for open files
-          if (lspClient.isDocumentOpen(key)) {
-            diagnosticsObject[key] = value;
-          }
-        });
-
-        diagnosticsContent = JSON.stringify(diagnosticsObject, null, 2);
-      }
-
-      return {
-        contents: [{ type: "text", text: diagnosticsContent, uri: uri }],
-      };
-    }
-
-    // Parse the lsp-hover URI
-    if (uri.startsWith('lsp-hover://')) {
-      // Check if LSP client is initialized
-      if (!lspClient) {
-        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-      }
-
-      try {
-        // Extract parameters from URI
-        // Format: lsp-hover://{file_path}?line={line}&character={character}&language_id={language_id}
-        const hoverUri = new URL(uri);
-
-        // Get the file path (remove the leading lsp-hover:// protocol part)
-        // Ensure we handle paths correctly - URL parsing can remove the leading slash
-        let decodedPath = decodeURIComponent(hoverUri.pathname);
-        // Normalize path to ensure it starts with a slash
-        const filePath = path.posix.normalize(decodedPath.startsWith('/') ? decodedPath : '/' + decodedPath);
-
-        // Get the query parameters
-        const lineParam = hoverUri.searchParams.get('line');
-        const characterParam = hoverUri.searchParams.get('character');
-        const languageId = hoverUri.searchParams.get('language_id');
-        if (!languageId) {
-          throw new Error("language_id parameter is required for lsp-hover URI");
-        }
-
-        if (!filePath || !lineParam || !characterParam) {
-          throw new Error("Invalid lsp-hover URI. Required parameters: file_path, line, character");
-        }
-
-        // Parse line and character as numbers
-        const line = parseInt(lineParam, 10);
-        const character = parseInt(characterParam, 10);
-
-        if (isNaN(line) || isNaN(character)) {
-          throw new Error("Line and character must be valid numbers");
-        }
-
-        debug(`Getting hover info for ${filePath} at line ${line}, character ${character}`);
-
-        // Read the file content
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-
-        // Create a file URI
-        const fileUri = `file://${path.resolve(filePath)}`;
-
-        // Open the document in the LSP server (won't reopen if already open)
-        await lspClient.openDocument(fileUri, fileContent, languageId);
-
-        // Get information at the location (LSP is 0-based)
-        const hoverText = await lspClient.getInfoOnLocation(fileUri, {
-          line: line - 1,
-          character: character - 1
-        });
-
-        debug(`Got hover information: ${hoverText.slice(0, 100)}${hoverText.length > 100 ? '...' : ''}`);
-
-        return {
-          contents: [{ type: "text", text: hoverText, uri: uri }],
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logError(`Error parsing hover URI or getting hover information: ${errorMessage}`);
-        throw new Error(`Error processing hover request: ${errorMessage}`);
-      }
-    }
-
-    // Parse the lsp-completions URI
-    if (uri.startsWith('lsp-completions://')) {
-      // Check if LSP client is initialized
-      if (!lspClient) {
-        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-      }
-
-      try {
-        // Extract parameters from URI
-        // Format: lsp-completions://{file_path}?line={line}&character={character}&language_id={language_id}
-        const completionsUri = new URL(uri);
-
-        // Get the file path (remove the leading lsp-completions:// protocol part)
-        // Ensure we handle paths correctly - URL parsing can remove the leading slash
-        let decodedPath = decodeURIComponent(completionsUri.pathname);
-        // Normalize path to ensure it starts with a slash
-        const filePath = path.posix.normalize(decodedPath.startsWith('/') ? decodedPath : '/' + decodedPath);
-
-        // Get the query parameters
-        const lineParam = completionsUri.searchParams.get('line');
-        const characterParam = completionsUri.searchParams.get('character');
-        const languageId = completionsUri.searchParams.get('language_id');
-        if (!languageId) {
-          throw new Error("language_id parameter is required for lsp-completions URI");
-        }
-
-        if (!filePath || !lineParam || !characterParam) {
-          throw new Error("Invalid lsp-completions URI. Required parameters: file_path, line, character");
-        }
-
-        // Parse line and character as numbers
-        const line = parseInt(lineParam, 10);
-        const character = parseInt(characterParam, 10);
-
-        if (isNaN(line) || isNaN(character)) {
-          throw new Error("Line and character must be valid numbers");
-        }
-
-        debug(`Getting completions for ${filePath} at line ${line}, character ${character}`);
-
-        // Read the file content
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-
-        // Create a file URI
-        const fileUri = `file://${path.resolve(filePath)}`;
-
-        // Open the document in the LSP server (won't reopen if already open)
-        await lspClient.openDocument(fileUri, fileContent, languageId);
-
-        // Get completions at the location (LSP is 0-based)
-        const completions = await lspClient.getCompletion(fileUri, {
-          line: line - 1,
-          character: character - 1
-        });
-
-        debug(`Got ${completions.length} completions`);
-
-        return {
-          contents: [{ type: "text", text: JSON.stringify(completions, null, 2), uri: uri }],
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logError(`Error parsing completions URI or getting completions: ${errorMessage}`);
-        throw new Error(`Error processing completions request: ${errorMessage}`);
-      }
+    // Find the appropriate handler for this URI scheme
+    const handlerKey = Object.keys(resourceHandlers).find(key => uri.startsWith(key));
+    if (handlerKey) {
+      return await resourceHandlers[handlerKey](uri);
     }
 
     throw new Error(`Unknown resource URI: ${uri}`);
@@ -1554,98 +1537,107 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   }
 });
 
+// Subscription handler types and implementation
+type SubscriptionHandler = (uri: string) => Promise<{ ok: boolean, context?: SubscriptionContext, error?: string }>;
+
+const subscriptionHandlers: Record<string, SubscriptionHandler> = {
+  // Handler for lsp-diagnostics://
+  'lsp-diagnostics://': async (uri: string) => {
+    checkLspClientInitialized();
+
+    // Extract the file path parameter from the URI
+    const filePath = uri.slice(18);
+
+    if (filePath) {
+      // Subscribe to a specific file
+      const fileUri = createFileUri(filePath);
+
+      // Verify the file is open
+      if (!lspClient.isDocumentOpen(fileUri)) {
+        throw new Error(`File ${filePath} is not open. Please open the file with open_document before subscribing to diagnostics.`);
+      }
+
+      debug(`Subscribing to diagnostics for file: ${filePath}`);
+
+      // Set up the subscription callback
+      const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
+        if (diagUri === fileUri) {
+          // Send resource update to clients
+          server.notification({
+            method: "notifications/resources/update",
+            params: {
+              uri,
+              content: [{ type: "text", text: JSON.stringify({ [diagUri]: diagnostics }, null, 2) }]
+            }
+          });
+        }
+      };
+
+      // Store the callback in the subscription context for later use with unsubscribe
+      const subscriptionContext: SubscriptionContext = { callback };
+
+      // Subscribe to diagnostics
+      lspClient.subscribeToDiagnostics(callback);
+
+      return {
+        ok: true,
+        context: subscriptionContext
+      };
+    } else {
+      // Subscribe to all files
+      debug("Subscribing to diagnostics for all files");
+
+      // Set up the subscription callback for all files
+      const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
+        // Only send updates for open files
+        if (lspClient.isDocumentOpen(diagUri)) {
+          // Get all open documents' diagnostics
+          const allDiagnostics = lspClient.getAllDiagnostics();
+
+          // Convert Map to object for JSON serialization
+          const diagnosticsObject: Record<string, any[]> = {};
+          allDiagnostics.forEach((diagValue, diagKey) => {
+            // Only include diagnostics for open files
+            if (lspClient.isDocumentOpen(diagKey)) {
+              diagnosticsObject[diagKey] = diagValue;
+            }
+          });
+
+          // Send resource update to clients
+          server.notification({
+            method: "notifications/resources/update",
+            params: {
+              uri,
+              content: [{ type: "text", text: JSON.stringify(diagnosticsObject, null, 2) }]
+            }
+          });
+        }
+      };
+
+      // Store the callback in the subscription context for later use with unsubscribe
+      const subscriptionContext: SubscriptionContext = { callback };
+
+      // Subscribe to diagnostics
+      lspClient.subscribeToDiagnostics(callback);
+
+      return {
+        ok: true,
+        context: subscriptionContext
+      };
+    }
+  }
+};
+
 // Resource subscription handler
 server.setRequestHandler(SubscribeRequestSchema, async (request) => {
   try {
     const { uri } = request.params;
     debug(`Handling SubscribeResource request for URI: ${uri}`);
 
-    if (uri.startsWith('lsp-diagnostics://')) {
-      // Check if LSP client is initialized
-      if (!lspClient) {
-        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-      }
-
-      // Extract the file path parameter from the URI
-      const filePath = uri.slice(18);
-
-      if (filePath) {
-        // Subscribe to a specific file
-        const fileUri = `file://${path.resolve(filePath)}`;
-
-        // Verify the file is open
-        if (!lspClient.isDocumentOpen(fileUri)) {
-          throw new Error(`File ${filePath} is not open. Please open the file with open_document before subscribing to diagnostics.`);
-        }
-
-        debug(`Subscribing to diagnostics for file: ${filePath}`);
-
-        // Set up the subscription callback
-        const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
-          if (diagUri === fileUri) {
-            // Send resource update to clients
-            server.notification({
-              method: "notifications/resources/update",
-              params: {
-                uri,
-                content: [{ type: "text", text: JSON.stringify({ [diagUri]: diagnostics }, null, 2) }]
-              }
-            });
-          }
-        };
-
-        // Store the callback in the subscription context for later use with unsubscribe
-        const subscriptionContext: SubscriptionContext = { callback };
-
-        // Subscribe to diagnostics
-        lspClient.subscribeToDiagnostics(callback);
-
-        return {
-          ok: true,
-          context: subscriptionContext
-        };
-      } else {
-        // Subscribe to all files
-        debug("Subscribing to diagnostics for all files");
-
-        // Set up the subscription callback for all files
-        const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
-          // Only send updates for open files
-          if (lspClient.isDocumentOpen(diagUri)) {
-            // Get all open documents' diagnostics
-            const allDiagnostics = lspClient.getAllDiagnostics();
-
-            // Convert Map to object for JSON serialization
-            const diagnosticsObject: Record<string, any[]> = {};
-            allDiagnostics.forEach((diagValue, diagKey) => {
-              // Only include diagnostics for open files
-              if (lspClient.isDocumentOpen(diagKey)) {
-                diagnosticsObject[diagKey] = diagValue;
-              }
-            });
-
-            // Send resource update to clients
-            server.notification({
-              method: "notifications/resources/update",
-              params: {
-                uri,
-                content: [{ type: "text", text: JSON.stringify(diagnosticsObject, null, 2) }]
-              }
-            });
-          }
-        };
-
-        // Store the callback in the subscription context for later use with unsubscribe
-        const subscriptionContext: SubscriptionContext = { callback };
-
-        // Subscribe to diagnostics
-        lspClient.subscribeToDiagnostics(callback);
-
-        return {
-          ok: true,
-          context: subscriptionContext
-        };
-      }
+    // Find the appropriate handler for this URI scheme
+    const handlerKey = Object.keys(subscriptionHandlers).find(key => uri.startsWith(key));
+    if (handlerKey) {
+      return await subscriptionHandlers[handlerKey](uri);
     }
 
     throw new Error(`Unknown resource URI: ${uri}`);
@@ -1659,18 +1651,15 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
   }
 });
 
-// Resource unsubscription handler
-server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
-  try {
-    const { uri, context } = request.params;
-    debug(`Handling UnsubscribeResource request for URI: ${uri}`);
+// Unsubscription handler types and implementation
+type UnsubscriptionHandler = (uri: string, context: any) => Promise<{ ok: boolean, error?: string }>;
 
-    if (uri.startsWith('lsp-diagnostics://') && context && (context as SubscriptionContext).callback) {
-      // Check if LSP client is initialized
-      if (!lspClient) {
-        throw new Error("LSP server not started. Call start_lsp first with a root directory.");
-      }
+const unsubscriptionHandlers: Record<string, UnsubscriptionHandler> = {
+  // Handler for lsp-diagnostics://
+  'lsp-diagnostics://': async (uri: string, context: any) => {
+    checkLspClientInitialized();
 
+    if (context && (context as SubscriptionContext).callback) {
       // Unsubscribe the callback
       lspClient.unsubscribeFromDiagnostics((context as SubscriptionContext).callback);
       debug(`Unsubscribed from diagnostics for URI: ${uri}`);
@@ -1678,7 +1667,23 @@ server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
       return { ok: true };
     }
 
-    throw new Error(`Unknown resource URI or invalid context: ${uri}`);
+    throw new Error(`Invalid subscription context for URI: ${uri}`);
+  }
+};
+
+// Resource unsubscription handler
+server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+  try {
+    const { uri, context } = request.params;
+    debug(`Handling UnsubscribeResource request for URI: ${uri}`);
+
+    // Find the appropriate handler for this URI scheme
+    const handlerKey = Object.keys(unsubscriptionHandlers).find(key => uri.startsWith(key));
+    if (handlerKey) {
+      return await unsubscriptionHandlers[handlerKey](uri, context);
+    }
+
+    throw new Error(`Unknown resource URI: ${uri}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logError(`Error handling unsubscription request: ${errorMessage}`);
