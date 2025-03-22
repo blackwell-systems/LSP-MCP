@@ -1,0 +1,27 @@
+{
+  "name": "ghc-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for GHC typed-hole information",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ghc-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "zod": "^3.22.4",
+    "zod-to-json-schema": "^3.24.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.3.3"
+  }
+}
