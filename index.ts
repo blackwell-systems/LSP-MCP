@@ -10,6 +10,7 @@ import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
   ToolSchema,
+  SetLevelRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
@@ -18,9 +19,35 @@ import { spawn } from "child_process";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
-// Set up logging
+// Set up logging with multiple log levels
 const logFilePath = process.env.LSP_MCP_LOG;
 let logStream: fsSync.WriteStream | null = null;
+type LoggingLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
+
+// Store original console methods before we do anything else
+const originalConsoleLog = console.log;
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+
+// Current log level - can be changed at runtime
+let logLevel: LoggingLevel = 'debug';
+
+// Map of log levels and their priorities (higher number = higher priority)
+const LOG_LEVEL_PRIORITY: Record<LoggingLevel, number> = {
+  'debug': 0,
+  'info': 1,
+  'notice': 2,
+  'warning': 3,
+  'error': 4,
+  'critical': 5,
+  'alert': 6,
+  'emergency': 7
+};
+
+// Check if message should be logged based on current level
+const shouldLog = (level: LoggingLevel): boolean => {
+  return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[logLevel];
+};
 
 if (logFilePath) {
   try {
@@ -29,38 +56,139 @@ if (logFilePath) {
 
     // Add timestamp to log entries
     const timestamp = new Date().toISOString();
-    logStream.write(`\n[${timestamp}] LSP MCP Server started\n`);
+    // Using original console method before we set up the redirections
+    logStream.write(`\n[${timestamp}] [info] LSP MCP Server started\n`);
   } catch (error) {
-    console.error(`Error opening log file ${logFilePath}:`, error);
+    // Use original console method to prevent recursion before we're fully set up
+    originalConsoleError(`Error opening log file ${logFilePath}:`, error);
   }
 }
 
-// Override console.log and console.error to also write to the log file
-const originalConsoleLog = console.log;
-const originalConsoleError = console.error;
-
-console.log = function(...args) {
-  originalConsoleLog.apply(console, args);
-
+// Core logging function
+const log = (level: LoggingLevel, ...args: any[]): void => {
+  if (!shouldLog(level)) return;
+  
+  const timestamp = new Date().toISOString();
+  const message = args.map(arg =>
+    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+  ).join(' ');
+  
+  // Format for console output with color coding
+  let consoleMethod = originalConsoleLog; // Use original methods to prevent recursion
+  let consolePrefix = '';
+  
+  switch(level) {
+    case 'debug':
+      consolePrefix = '\x1b[90m[DEBUG]\x1b[0m'; // Gray
+      break;
+    case 'info':
+      consolePrefix = '\x1b[36m[INFO]\x1b[0m'; // Cyan
+      break;
+    case 'notice':
+      consolePrefix = '\x1b[32m[NOTICE]\x1b[0m'; // Green
+      break;
+    case 'warning':
+      consolePrefix = '\x1b[33m[WARNING]\x1b[0m'; // Yellow
+      consoleMethod = originalConsoleWarn || originalConsoleLog;
+      break;
+    case 'error':
+      consolePrefix = '\x1b[31m[ERROR]\x1b[0m'; // Red
+      consoleMethod = originalConsoleError;
+      break;
+    case 'critical':
+      consolePrefix = '\x1b[41m\x1b[37m[CRITICAL]\x1b[0m'; // White on red
+      consoleMethod = originalConsoleError;
+      break;
+    case 'alert':
+      consolePrefix = '\x1b[45m\x1b[37m[ALERT]\x1b[0m'; // White on purple
+      consoleMethod = originalConsoleError;
+      break;
+    case 'emergency':
+      consolePrefix = '\x1b[41m\x1b[1m[EMERGENCY]\x1b[0m'; // Bold white on red
+      consoleMethod = originalConsoleError;
+      break;
+  }
+  
+  consoleMethod(`${consolePrefix} ${message}`);
+  
+  // Write to log file if available
   if (logStream) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg =>
-      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-    ).join(' ');
-    logStream.write(`[${timestamp}] LOG: ${message}\n`);
+    logStream.write(`[${timestamp}] [${level}] ${message}\n`);
+  }
+  
+  // Send notification to MCP client if server is available and initialized
+  if (server && typeof server.notification === 'function') {
+    try {
+      server.notification({
+        method: "notifications/message",
+        params: {
+          level,
+          logger: "lsp-mcp-server",
+          data: message,
+        },
+      });
+    } catch (error) {
+      // Use original console methods to avoid recursion
+      originalConsoleError("Error sending notification:", error);
+    }
   }
 };
 
-console.error = function(...args) {
-  originalConsoleError.apply(console, args);
+// Create helper functions for each log level
+const debug = (...args: any[]): void => log('debug', ...args);
+const info = (...args: any[]): void => log('info', ...args);
+const notice = (...args: any[]): void => log('notice', ...args);
+const warning = (...args: any[]): void => log('warning', ...args);
+const logError = (...args: any[]): void => log('error', ...args);
+const critical = (...args: any[]): void => log('critical', ...args);
+const alert = (...args: any[]): void => log('alert', ...args);
+const emergency = (...args: any[]): void => log('emergency', ...args);
 
-  if (logStream) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg =>
-      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-    ).join(' ');
-    logStream.write(`[${timestamp}] ERROR: ${message}\n`);
+// Set log level function - defined after log function to avoid circular references 
+const setLogLevel = (level: LoggingLevel): void => {
+  logLevel = level;
+  log('info', `Log level set to: ${level}`);
+};
+
+
+// Flag to prevent recursion in logging
+let isLogging = false;
+
+// Override console methods to use our logging system
+console.log = function(...args) {
+  if (isLogging) {
+    // Use original method to prevent recursion
+    originalConsoleLog(...args);
+    return;
   }
+  
+  isLogging = true;
+  info(...args);
+  isLogging = false;
+};
+
+console.warn = function(...args) {
+  if (isLogging) {
+    // Use original method to prevent recursion
+    originalConsoleWarn(...args);
+    return;
+  }
+  
+  isLogging = true;
+  warning(...args);
+  isLogging = false;
+};
+
+console.error = function(...args) {
+  if (isLogging) {
+    // Use original method to prevent recursion
+    originalConsoleError(...args);
+    return;
+  }
+  
+  isLogging = true;
+  logError(...args);
+  isLogging = false;
 };
 
 // Get LSP binary path and arguments from command line arguments
@@ -128,8 +256,8 @@ class LSPClient {
   }
 
   private startProcess(): void {
-    console.log(`Starting LSP client with binary: ${this.lspServerPath}`);
-    console.log(`Using LSP server arguments: ${this.lspServerArgs.join(' ')}`);
+    info(`Starting LSP client with binary: ${this.lspServerPath}`);
+    info(`Using LSP server arguments: ${this.lspServerArgs.join(' ')}`);
     this.process = spawn(this.lspServerPath, this.lspServerArgs, {
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -137,11 +265,11 @@ class LSPClient {
     // Set up event listeners
     this.process.stdout.on("data", (data: Buffer) => this.handleData(data));
     this.process.stderr.on("data", (data: Buffer) => {
-      console.error(`LSP Server Message: ${data.toString()}`);
+      debug(`LSP Server Message: ${data.toString()}`);
     });
 
     this.process.on("close", (code: number) => {
-      console.log(`LSP server process exited with code ${code}`);
+      notice(`LSP server process exited with code ${code}`);
     });
   }
 
@@ -213,16 +341,16 @@ class LSPClient {
   }
 
   private async handleMessage(message: LSPMessage): Promise<void> {
-    // Log the message for debugging
-    if (logStream) {
-      try {
-        const timestamp = new Date().toISOString();
-        const direction = 'RECEIVED';
-        const logContent = `[${timestamp}] LSP ${direction}: ${JSON.stringify(message, null, 2)}\n`;
-        logStream.write(logContent);
-      } catch (error) {
-        console.error("Error logging LSP message:", error);
-      }
+    // Log the message with appropriate level
+    try {
+      const direction = 'RECEIVED';
+      const messageStr = JSON.stringify(message, null, 2);
+      // Use method to determine log level if available, otherwise use debug
+      const method = message.method || '';
+      const logLevel = this.getLSPMethodLogLevel(method);
+      log(logLevel, `LSP ${direction} (${method}): ${messageStr}`);
+    } catch (error) {
+      warning("Error logging LSP message:", error);
     }
 
     // Handle response messages
@@ -250,7 +378,20 @@ class LSPClient {
         const { uri, diagnostics } = message.params;
 
         if (uri && Array.isArray(diagnostics)) {
-          console.log(`Received ${diagnostics.length} diagnostics for ${uri}`);
+          const severity = diagnostics.length > 0 ? 
+            Math.min(...diagnostics.map(d => d.severity || 4)) : 4;
+          
+          // Map LSP severity to our log levels
+          const severityToLevel: Record<number, LoggingLevel> = {
+            1: 'error',      // Error
+            2: 'warning',    // Warning
+            3: 'info',       // Information
+            4: 'debug'       // Hint
+          };
+          
+          const level = severityToLevel[severity] || 'debug';
+          
+          log(level, `Received ${diagnostics.length} diagnostics for ${uri}`);
 
           // Store diagnostics, replacing any previous ones for this URI
           this.documentDiagnostics.set(uri, diagnostics);
@@ -260,6 +401,25 @@ class LSPClient {
         }
       }
     }
+  }
+
+  private getLSPMethodLogLevel(method: string): LoggingLevel {
+    // Define appropriate log levels for different LSP methods
+    if (method.startsWith('textDocument/did')) {
+      return 'debug'; // Document changes are usually debug level
+    }
+    
+    if (method.includes('diagnostic') || method.includes('publishDiagnostics')) {
+      return 'info'; // Diagnostics depend on their severity, but base level is info
+    }
+    
+    if (method === 'initialize' || method === 'initialized' || 
+        method === 'shutdown' || method === 'exit') {
+      return 'notice'; // Important lifecycle events are notice level
+    }
+    
+    // Default to debug level for most LSP operations
+    return 'debug';
   }
 
   private sendRequest<T>(method: string, params?: any): Promise<T> {
@@ -276,12 +436,14 @@ class LSPClient {
       params
     };
 
-    // Log the request for debugging
-    if (logStream) {
-      const timestamp = new Date().toISOString();
+    // Log the request with appropriate level
+    try {
       const direction = 'SENT';
-      const logContent = `[${timestamp}] LSP ${direction}: ${JSON.stringify(request, null, 2)}\n`;
-      logStream.write(logContent);
+      const requestStr = JSON.stringify(request, null, 2);
+      const logLevel = this.getLSPMethodLogLevel(method);
+      log(logLevel, `LSP ${direction} (${method}): ${requestStr}`);
+    } catch (error) {
+      warning("Error logging LSP request:", error);
     }
 
     const promise = new Promise<T>((resolve, reject) => {
@@ -327,12 +489,14 @@ class LSPClient {
       params
     };
 
-    // Log the notification for debugging
-    if (logStream) {
-      const timestamp = new Date().toISOString();
+    // Log the notification with appropriate level
+    try {
       const direction = 'SENT';
-      const logContent = `[${timestamp}] LSP ${direction}: ${JSON.stringify(notification, null, 2)}\n`;
-      logStream.write(logContent);
+      const notificationStr = JSON.stringify(notification, null, 2);
+      const logLevel = this.getLSPMethodLogLevel(method);
+      log(logLevel, `LSP ${direction} (${method}): ${notificationStr}`);
+    } catch (error) {
+      warning("Error logging LSP notification:", error);
     }
 
     const content = JSON.stringify(notification);
@@ -350,7 +514,7 @@ class LSPClient {
         this.startProcess();
       }
       
-      console.log("Initializing LSP connection...");
+      info("Initializing LSP connection...");
       await this.sendRequest("initialize", {
         processId: process.pid,
         clientInfo: {
@@ -376,9 +540,9 @@ class LSPClient {
 
       this.sendNotification("initialized", {});
       this.initialized = true;
-      console.log("LSP connection initialized successfully");
+      notice("LSP connection initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize LSP connection:", error);
+      logError("Failed to initialize LSP connection:", error);
       throw error;
     }
   }
@@ -395,7 +559,7 @@ class LSPClient {
       const currentVersion = this.documentVersions.get(uri) || 1;
       const newVersion = currentVersion + 1;
 
-      console.log(`Document already open, updating content: ${uri} (version ${newVersion})`);
+      debug(`Document already open, updating content: ${uri} (version ${newVersion})`);
       this.sendNotification("textDocument/didChange", {
         textDocument: {
           uri,
@@ -413,7 +577,7 @@ class LSPClient {
       return;
     }
 
-    console.log(`Opening document: ${uri}`);
+    debug(`Opening document: ${uri}`);
     this.sendNotification("textDocument/didOpen", {
       textDocument: {
         uri,
@@ -447,7 +611,7 @@ class LSPClient {
 
     // Only close if document is open
     if (this.openedDocuments.has(uri)) {
-      console.log(`Closing document: ${uri}`);
+      debug(`Closing document: ${uri}`);
       this.sendNotification("textDocument/didClose", {
         textDocument: { uri }
       });
@@ -456,7 +620,7 @@ class LSPClient {
       this.openedDocuments.delete(uri);
       this.documentVersions.delete(uri);
     } else {
-      console.log(`Document not open: ${uri}`);
+      debug(`Document not open: ${uri}`);
     }
   }
 
@@ -491,7 +655,7 @@ class LSPClient {
       try {
         callback(uri, diagnostics);
       } catch (error) {
-        console.error("Error in diagnostic subscriber callback:", error);
+        warning("Error in diagnostic subscriber callback:", error);
       }
     });
   }
@@ -507,7 +671,7 @@ class LSPClient {
       throw new Error("LSP client not initialized. Please call start_lsp first.");
     }
 
-    console.log(`Getting info on location: ${uri} (${position.line}:${position.character})`);
+    debug(`Getting info on location: ${uri} (${position.line}:${position.character})`);
 
     try {
       // Use hover request to get information at the position
@@ -528,7 +692,7 @@ class LSPClient {
         }
       }
     } catch (error) {
-      console.error(`Error getting hover information: ${error instanceof Error ? error.message : String(error)}`);
+      warning(`Error getting hover information: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return '';
@@ -540,7 +704,7 @@ class LSPClient {
       throw new Error("LSP client not initialized. Please call start_lsp first.");
     }
 
-    console.log(`Getting completions at location: ${uri} (${position.line}:${position.character})`);
+    debug(`Getting completions at location: ${uri} (${position.line}:${position.character})`);
 
     try {
       const response = await this.sendRequest<any>("textDocument/completion", {
@@ -554,7 +718,7 @@ class LSPClient {
         return response.items;
       }
     } catch (error) {
-      console.error(`Error getting completions: ${error instanceof Error ? error.message : String(error)}`);
+      warning(`Error getting completions: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return [];
@@ -566,7 +730,7 @@ class LSPClient {
       throw new Error("LSP client not initialized. Please call start_lsp first.");
     }
 
-    console.log(`Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`);
+    debug(`Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`);
 
     try {
       const response = await this.sendRequest<any>("textDocument/codeAction", {
@@ -581,7 +745,7 @@ class LSPClient {
         return response;
       }
     } catch (error) {
-      console.error(`Error getting code actions: ${error instanceof Error ? error.message : String(error)}`);
+      warning(`Error getting code actions: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return [];
@@ -591,7 +755,7 @@ class LSPClient {
     if (!this.initialized) return;
 
     try {
-      console.log("Shutting down LSP connection...");
+      info("Shutting down LSP connection...");
 
       // Clear all diagnostic subscribers
       this.clearDiagnosticSubscribers();
@@ -603,7 +767,7 @@ class LSPClient {
             textDocument: { uri }
           });
         } catch (error) {
-          console.error(`Error closing document ${uri}:`, error);
+          warning(`Error closing document ${uri}:`, error);
         }
       }
 
@@ -611,21 +775,21 @@ class LSPClient {
       this.sendNotification("exit");
       this.initialized = false;
       this.openedDocuments.clear();
-      console.log("LSP connection shut down successfully");
+      notice("LSP connection shut down successfully");
     } catch (error) {
-      console.error("Error shutting down LSP connection:", error);
+      logError("Error shutting down LSP connection:", error);
     }
   }
 
   async restart(rootDirectory?: string): Promise<void> {
-    console.log("Restarting LSP server...");
+    info("Restarting LSP server...");
 
     // If initialized, try to shut down cleanly first
     if (this.initialized) {
       try {
         await this.shutdown();
       } catch (error) {
-        console.error("Error shutting down LSP server during restart:", error);
+        warning("Error shutting down LSP server during restart:", error);
       }
     }
 
@@ -633,9 +797,9 @@ class LSPClient {
     if (this.process && !this.process.killed) {
       try {
         this.process.kill();
-        console.log("Killed existing LSP process");
+        notice("Killed existing LSP process");
       } catch (error) {
-        console.error("Error killing LSP process:", error);
+        logError("Error killing LSP process:", error);
       }
     }
 
@@ -658,9 +822,9 @@ class LSPClient {
     // Initialize with the provided root directory or use the stored one
     if (rootDirectory) {
       await this.initialize(rootDirectory);
-      console.log(`LSP server restarted and initialized with root directory: ${rootDirectory}`);
+      notice(`LSP server restarted and initialized with root directory: ${rootDirectory}`);
     } else {
-      console.log("LSP server restarted but not initialized. Call start_lsp to initialize.");
+      info("LSP server restarted but not initialized. Call start_lsp to initialize.");
     }
   }
 }
@@ -703,6 +867,11 @@ const GetDiagnosticsArgsSchema = z.object({
   file_path: z.string().optional().describe(`Path to the file to get diagnostics for. If not provided, returns diagnostics for all open files.`),
 });
 
+const SetLogLevelArgsSchema = z.object({
+  level: z.enum(['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'])
+    .describe("The logging level to set")
+});
+
 const RestartLSPServerArgsSchema = z.object({
   root_dir: z.string().optional().describe("The root directory for the LSP server. If not provided, the server will not be initialized automatically."),
 });
@@ -739,13 +908,14 @@ const server = new Server(
           }
         ]
       },
+      logging: {},
     },
   },
 );
 
 // Tool handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  console.log("Handling ListTools request");
+  debug("Handling ListTools request");
   return {
     tools: [
       {
@@ -788,6 +958,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: "Get diagnostic messages (errors, warnings) for files",
         inputSchema: zodToJsonSchema(GetDiagnosticsArgsSchema) as ToolInput,
       },
+      {
+        name: "set_log_level",
+        description: "Set the server logging level",
+        inputSchema: zodToJsonSchema(SetLogLevelArgsSchema) as ToolInput,
+      },
     ],
   };
 });
@@ -795,7 +970,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const { name, arguments: args } = request.params;
-    console.log(`Handling CallTool request for tool: ${name}`);
+    debug(`Handling CallTool request for tool: ${name}`);
 
     switch (name) {
       case "get_info_on_location": {
@@ -804,7 +979,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Invalid arguments for get_info_on_location: ${parsed.error}`);
         }
 
-        console.log(`Getting info on location in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
+        debug(`Getting info on location in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
 
         // Check if LSP client is initialized
         if (!lspClient) {
@@ -826,7 +1001,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           character: parsed.data.character - 1
         });
 
-        console.log(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
+        debug(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
 
         return {
           content: [{ type: "text", text }],
@@ -839,7 +1014,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Invalid arguments for get_completions: ${parsed.error}`);
         }
 
-        console.log(`Getting completions in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
+        debug(`Getting completions in file: ${parsed.data.file_path} (${parsed.data.line}:${parsed.data.character})`);
 
         // Check if LSP client is initialized
         if (!lspClient) {
@@ -861,7 +1036,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           character: parsed.data.character - 1
         });
 
-        console.log(`Returned ${completions.length} completions`);
+        debug(`Returned ${completions.length} completions`);
 
         return {
           content: [{ type: "text", text: JSON.stringify(completions, null, 2) }],
@@ -874,7 +1049,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Invalid arguments for get_code_actions: ${parsed.error}`);
         }
 
-        console.log(`Getting code actions in file: ${parsed.data.file_path} (${parsed.data.start_line}:${parsed.data.start_character} to ${parsed.data.end_line}:${parsed.data.end_character})`);
+        debug(`Getting code actions in file: ${parsed.data.file_path} (${parsed.data.start_line}:${parsed.data.start_character} to ${parsed.data.end_line}:${parsed.data.end_character})`);
 
         // Check if LSP client is initialized
         if (!lspClient) {
@@ -902,7 +1077,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         });
 
-        console.log(`Returned ${codeActions.length} code actions`);
+        debug(`Returned ${codeActions.length} code actions`);
 
         return {
           content: [{ type: "text", text: JSON.stringify(codeActions, null, 2) }],
@@ -923,7 +1098,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Get the root directory from args or use the stored one
         const restartRootDir = parsed.data.root_dir || rootDir;
 
-        console.log(`Restarting LSP server${parsed.data.root_dir ? ` with root directory: ${parsed.data.root_dir}` : ''}...`);
+        info(`Restarting LSP server${parsed.data.root_dir ? ` with root directory: ${parsed.data.root_dir}` : ''}...`);
 
         try {
           // If root_dir is provided, update the stored rootDir
@@ -944,7 +1119,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`Error restarting LSP server: ${errorMessage}`);
+          logError(`Error restarting LSP server: ${errorMessage}`);
           throw new Error(`Failed to restart LSP server: ${errorMessage}`);
         }
       }
@@ -955,7 +1130,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Invalid arguments for start_lsp: ${parsed.error}`);
         }
 
-        console.log(`Starting LSP server with root directory: ${parsed.data.root_dir}`);
+        info(`Starting LSP server with root directory: ${parsed.data.root_dir}`);
 
         try {
           rootDir = parsed.data.root_dir;
@@ -973,7 +1148,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`Error starting LSP server: ${errorMessage}`);
+          logError(`Error starting LSP server: ${errorMessage}`);
           throw new Error(`Failed to start LSP server: ${errorMessage}`);
         }
       }
@@ -984,7 +1159,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Invalid arguments for open_document: ${parsed.error}`);
         }
 
-        console.log(`Opening document: ${parsed.data.file_path}`);
+        debug(`Opening document: ${parsed.data.file_path}`);
 
         // Check if LSP client is initialized
         if (!lspClient) {
@@ -1006,7 +1181,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`Error opening document: ${errorMessage}`);
+          logError(`Error opening document: ${errorMessage}`);
           throw new Error(`Failed to open document: ${errorMessage}`);
         }
       }
@@ -1017,7 +1192,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Invalid arguments for close_document: ${parsed.error}`);
         }
 
-        console.log(`Closing document: ${parsed.data.file_path}`);
+        debug(`Closing document: ${parsed.data.file_path}`);
 
         // Check if LSP client is initialized
         if (!lspClient) {
@@ -1036,7 +1211,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`Error closing document: ${errorMessage}`);
+          logError(`Error closing document: ${errorMessage}`);
           throw new Error(`Failed to close document: ${errorMessage}`);
         }
       }
@@ -1074,7 +1249,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
           } else {
             // For all files
-            console.log("Getting diagnostics for all files");
+            debug("Getting diagnostics for all files");
             const allDiagnostics = lspClient.getAllDiagnostics();
 
             // Convert Map to object for JSON serialization
@@ -1095,9 +1270,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`Error getting diagnostics: ${errorMessage}`);
+          logError(`Error getting diagnostics: ${errorMessage}`);
           throw new Error(`Failed to get diagnostics: ${errorMessage}`);
         }
+      }
+
+      case "set_log_level": {
+        const parsed = SetLogLevelArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments for set_log_level: ${parsed.error}`);
+        }
+
+        // Set the log level
+        const { level } = parsed.data;
+        setLogLevel(level);
+
+        return {
+          content: [{ type: "text", text: `Log level set to: ${level}` }],
+        };
       }
 
       default:
@@ -1105,7 +1295,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error handling tool request: ${errorMessage}`);
+    logError(`Error handling tool request: ${errorMessage}`);
     return {
       content: [{ type: "text", text: `Error: ${errorMessage}` }],
       isError: true,
@@ -1115,30 +1305,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Ensure log file is closed properly on process exit
 process.on('exit', async () => {
-  console.log("Shutting down MCP server...");
+  info("Shutting down MCP server...");
   try {
     await lspClient.shutdown();
   } catch (error) {
-    console.error("Error during shutdown:", error);
+    warning("Error during shutdown:", error);
   }
 
   if (logStream) {
-    const timestamp = new Date().toISOString();
-    logStream.write(`[${timestamp}] LSP MCP Server exited\n`);
+    log('info', "LSP MCP Server exited");
     logStream.end();
   }
 });
 
 // Log uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  
+  // Don't exit for "Not connected" errors during startup
+  if (errorMessage === 'Not connected') {
+    warning(`Uncaught exception (non-fatal): ${errorMessage}`, error);
+    return;
+  }
+  
+  critical(`Uncaught exception: ${errorMessage}`, error);
+  // Exit with status code 1 to indicate error
   process.exit(1);
 });
 
 // Resource handler for diagnostics
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   try {
-    console.log(`Handling ReadResource request for URI: ${request.params.uri}`);
+    debug(`Handling ReadResource request for URI: ${request.params.uri}`);
     const uri = request.params.uri;
 
     // Parse the lsp-diagnostics URI
@@ -1156,7 +1354,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
       if (filePath) {
         // For a specific file
-        console.log(`Getting diagnostics for file: ${filePath}`);
+        debug(`Getting diagnostics for file: ${filePath}`);
         const fileUri = `file://${path.resolve(filePath)}`;
 
         // Verify the file is open
@@ -1168,7 +1366,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
       } else {
         // For all files
-        console.log("Getting diagnostics for all files");
+        debug("Getting diagnostics for all files");
         const allDiagnostics = lspClient.getAllDiagnostics();
 
         // Convert Map to object for JSON serialization
@@ -1191,7 +1389,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     throw new Error(`Unknown resource URI: ${uri}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error handling resource request: ${errorMessage}`);
+    logError(`Error handling resource request: ${errorMessage}`);
     return {
       content: [{ type: "text", text: `Error: ${errorMessage}` }],
       isError: true,
@@ -1203,7 +1401,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 server.setRequestHandler(SubscribeRequestSchema, async (request) => {
   try {
     const { uri } = request.params;
-    console.log(`Handling SubscribeResource request for URI: ${uri}`);
+    debug(`Handling SubscribeResource request for URI: ${uri}`);
 
     if (uri.startsWith('lsp-diagnostics://')) {
       // Check if LSP client is initialized
@@ -1223,7 +1421,7 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
           throw new Error(`File ${filePath} is not open. Please open the file with open_document before subscribing to diagnostics.`);
         }
 
-        console.log(`Subscribing to diagnostics for file: ${filePath}`);
+        debug(`Subscribing to diagnostics for file: ${filePath}`);
 
         // Set up the subscription callback
         const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
@@ -1251,7 +1449,7 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
         };
       } else {
         // Subscribe to all files
-        console.log("Subscribing to diagnostics for all files");
+        debug("Subscribing to diagnostics for all files");
 
         // Set up the subscription callback for all files
         const callback: DiagnosticUpdateCallback = (diagUri, diagnostics) => {
@@ -1296,7 +1494,7 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
     throw new Error(`Unknown resource URI: ${uri}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error handling subscription request: ${errorMessage}`);
+    logError(`Error handling subscription request: ${errorMessage}`);
     return {
       ok: false,
       error: errorMessage
@@ -1308,7 +1506,7 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
 server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
   try {
     const { uri, context } = request.params;
-    console.log(`Handling UnsubscribeResource request for URI: ${uri}`);
+    debug(`Handling UnsubscribeResource request for URI: ${uri}`);
 
     if (uri.startsWith('lsp-diagnostics://') && context && (context as SubscriptionContext).callback) {
       // Check if LSP client is initialized
@@ -1318,7 +1516,7 @@ server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
 
       // Unsubscribe the callback
       lspClient.unsubscribeFromDiagnostics((context as SubscriptionContext).callback);
-      console.log(`Unsubscribed from diagnostics for URI: ${uri}`);
+      debug(`Unsubscribed from diagnostics for URI: ${uri}`);
 
       return { ok: true };
     }
@@ -1326,7 +1524,27 @@ server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
     throw new Error(`Unknown resource URI or invalid context: ${uri}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error handling unsubscription request: ${errorMessage}`);
+    logError(`Error handling unsubscription request: ${errorMessage}`);
+    return {
+      ok: false,
+      error: errorMessage
+    };
+  }
+});
+
+// Handle log level changes from client
+server.setRequestHandler(SetLevelRequestSchema, async (request) => {
+  try {
+    const { level } = request.params;
+    debug(`Received request to set log level to: ${level}`);
+    
+    // Set the log level
+    setLogLevel(level);
+    
+    return {};
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logError(`Error handling set level request: ${errorMessage}`);
     return {
       ok: false,
       error: errorMessage
@@ -1337,7 +1555,7 @@ server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
 // Resource listing handler
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   try {
-    console.log("Handling ListResource request");
+    debug("Handling ListResource request");
 
     // Check if LSP client is initialized
     if (!lspClient) {
@@ -1371,7 +1589,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
     return { resources };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error handling list resources request: ${errorMessage}`);
+    logError(`Error handling list resources request: ${errorMessage}`);
     return {
       resources: [],
       isError: true,
@@ -1382,25 +1600,25 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 
 // Start server
 async function runServer() {
-  console.log("Starting LSP MCP Server...");
+  info("Starting LSP MCP Server...");
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log("LSP MCP Server running on stdio");
-  console.log("Using LSP server:", lspServerPath);
+  notice("LSP MCP Server running on stdio");
+  info("Using LSP server:", lspServerPath);
   if (lspServerArgs.length > 0) {
-    console.log("With arguments:", lspServerArgs.join(' '));
+    info("With arguments:", lspServerArgs.join(' '));
   }
   if (logFilePath) {
-    console.log(`Logging to file: ${logFilePath}`);
+    info(`Logging to file: ${logFilePath}`);
   }
 
   // Create LSP client instance but don't start the process or initialize yet
   // Both will happen when start_lsp is called
   lspClient = new LSPClient(lspServerPath, lspServerArgs);
-  console.log("LSP client created. Use the start_lsp tool to start and initialize with a root directory.");
+  info("LSP client created. Use the start_lsp tool to start and initialize with a root directory.");
 }
 
 runServer().catch((error) => {
-  console.error("Fatal error running server:", error);
+  emergency("Fatal error running server:", error);
   process.exit(1);
 });
