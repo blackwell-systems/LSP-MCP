@@ -321,12 +321,12 @@ export const getToolDefinitions = () => {
   return [
     {
       name: "get_info_on_location",
-      description: "Get information on a specific location in a file via LSP hover. Use this tool to retrieve detailed type information, documentation, and other contextual details about symbols in your code. Particularly useful for understanding variable types, function signatures, and module documentation at a specific cursor position. Requires the file to be opened first.",
+      description: "Get information on a specific location in a file via LSP hover. Use this tool to retrieve detailed type information, documentation, and other contextual details about symbols in your code. Particularly useful for understanding variable types, function signatures, and module documentation at a specific location in the code. Use this whenever you need to get a better idea on what a particular function is doing in that context. Requires the file to be opened first.",
       inputSchema: zodToJsonSchema(GetInfoOnLocationArgsSchema) as ToolInput,
     },
     {
       name: "get_completions",
-      description: "Get completion suggestions at a specific location in a file. Use this tool to retrieve code completion options based on the current context, including variable names, function calls, object properties, and more. Helpful for code assistance and auto-completion at a specific cursor position. Requires the file to be opened first.",
+      description: "Get completion suggestions at a specific location in a file. Use this tool to retrieve code completion options based on the current context, including variable names, function calls, object properties, and more. Helpful for code assistance and auto-completion at a particular location. Use this when determining which functions you have available in a given package, for example when changing libraries. Requires the file to be opened first.",
       inputSchema: zodToJsonSchema(GetCompletionsArgsSchema) as ToolInput,
     },
     {
