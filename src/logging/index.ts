@@ -33,10 +33,16 @@ const shouldLog = (level: LoggingLevel): boolean => {
 
 // Reference to the server for sending notifications
 let serverInstance: any = null;
+let serverInitialized = false;
 
 // Set the server instance for notifications
 export const setServer = (server: any): void => {
   serverInstance = server;
+};
+
+// Mark the server as initialized (called after receiving initialized notification)
+export const markServerInitialized = (): void => {
+  serverInitialized = true;
 };
 
 // Flag to prevent recursion in logging
@@ -91,7 +97,7 @@ export const log = (level: LoggingLevel, ...args: any[]): void => {
   consoleMethod(`${consolePrefix} ${message}`);
 
   // Send notification to MCP client if server is available and initialized
-  if (serverInstance && typeof serverInstance.notification === 'function') {
+  if (serverInstance && serverInitialized && typeof serverInstance.notification === 'function') {
     try {
       serverInstance.notification({
         method: "notifications/message",

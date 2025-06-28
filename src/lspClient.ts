@@ -153,6 +153,7 @@ export class LSPClient {
     // Store server capabilities from initialize response
     if ('id' in message && message.result?.capabilities) {
       this.serverCapabilities = message.result.capabilities;
+      notice(`LSP Server Capabilities: ${JSON.stringify(this.serverCapabilities, null, 2)}`);
     }
 
     // Handle notification messages
@@ -202,8 +203,8 @@ export class LSPClient {
       return 'notice'; // Important lifecycle events are notice level
     }
 
-    // Default to debug level for most LSP operations
-    return 'debug';
+    // Default to info level for easier debugging
+    return 'info';
   }
 
   private sendRequest<T>(method: string, params?: any): Promise<T> {
@@ -299,12 +300,30 @@ export class LSPClient {
       }
 
       info("Initializing LSP connection...");
+      const resolvedRootDir = path.resolve(rootDirectory);
       await this.sendRequest("initialize", {
         processId: process.pid,
         clientInfo: {
-          name: "lsp-mcp-server"
+          name: "lsp-mcp-server",
+          version: "0.3.0"
         },
-        rootUri: "file://" + path.resolve(rootDirectory),
+        rootUri: "file://" + resolvedRootDir,
+        rootPath: resolvedRootDir,
+        workspaceFolders: [
+          {
+            uri: "file://" + resolvedRootDir,
+            name: path.basename(resolvedRootDir)
+          }
+        ],
+        initializationOptions: {
+          preferences: {
+            includeCompletionsForModuleExports: true,
+            includeCompletionsWithInsertText: true
+          },
+          tsserver: {
+            useSeparateSyntaxServer: false
+          }
+        },
         capabilities: {
           textDocument: {
             hover: {
@@ -316,6 +335,27 @@ export class LSPClient {
               }
             },
             codeAction: {
+              dynamicRegistration: true
+            },
+            diagnostic: {
+              dynamicRegistration: false
+            },
+            publishDiagnostics: {
+              relatedInformation: true,
+              versionSupport: false,
+              tagSupport: {
+                valueSet: [1, 2] // Unnecessary and Deprecated
+              },
+              codeDescriptionSupport: true,
+              dataSupport: true
+            }
+          },
+          workspace: {
+            configuration: true,
+            didChangeConfiguration: {
+              dynamicRegistration: true
+            },
+            didChangeWatchedFiles: {
               dynamicRegistration: true
             }
           }

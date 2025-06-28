@@ -2,6 +2,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -16,7 +17,7 @@ import {
 import * as fsSync from "fs";
 
 import { LSPClient } from "./src/lspClient.js";
-import { debug, info, notice, warning, logError, critical, alert, emergency, setLogLevel, setServer } from "./src/logging/index.js";
+import { debug, info, notice, warning, logError, critical, alert, emergency, setLogLevel, setServer, markServerInitialized } from "./src/logging/index.js";
 import { getToolHandlers, getToolDefinitions } from "./src/tools/index.js";
 import { getPromptHandlers, getPromptDefinitions } from "./src/prompts/index.js";
 import {
@@ -93,18 +94,16 @@ const server = new Server(
   {
     capabilities: {
       tools: {
-        description: "A set of tools for interacting with the Language Server Protocol (LSP). These tools provide access to language-specific features like code completion, hover information, diagnostics, and code actions. Before using any LSP features, you must first call start_lsp with the project root directory, then open the files you wish to analyze."
+        listChanged: true
       },
       resources: {
-        description: "URI-based access to Language Server Protocol (LSP) features. These resources provide a way to access language-specific features like diagnostics, hover information, and completions through a URI pattern. Before using these resources, you must first call the start_lsp tool with the project root directory, then open the files you wish to analyze using the open_document tool. Additional resources may be available through language-specific extensions.",
-        templates: getResourceTemplates()
+        subscribe: true,
+        listChanged: true
       },
       prompts: {
-        description: "Helpful prompts related to using the LSP MCP server. These prompts provide guidance on how to use the LSP features and tools available in this server. Additional prompts may be available through language-specific extensions."
+        listChanged: true
       },
-      logging: {
-        description: "Logging capabilities for the LSP MCP server. Use the set_log_level tool to control logging verbosity. The server sends notifications about important events, errors, and diagnostic updates."
-      }
+      logging: {}
     },
   },
 );
@@ -387,17 +386,25 @@ async function runServer() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  
   notice("LSP MCP Server running on stdio");
-  info("Using LSP server:", lspServerPath);
-  if (lspServerArgs.length > 0) {
-    info("With arguments:", lspServerArgs.join(' '));
-  }
-
-  // Create LSP client instance but don't start the process or initialize yet
-  // Both will happen when start_lsp is called
-  lspClient = new LSPClient(lspServerPath, lspServerArgs);
-  info("LSP client created. Use the start_lsp tool to start and initialize with a root directory.");
+  
+  // Wait a brief moment for the MCP initialization handshake to complete
+  // before enabling notifications
+  setTimeout(() => {
+    markServerInitialized();
+    info("Using LSP server:", lspServerPath);
+    if (lspServerArgs.length > 0) {
+      info("With arguments:", lspServerArgs.join(' '));
+    }
+    
+    // Create LSP client instance but don't start the process or initialize yet
+    // Both will happen when start_lsp is called
+    lspClient = new LSPClient(lspServerPath, lspServerArgs);
+    info("LSP client created. Use the start_lsp tool to start and initialize with a root directory.");
+  }, 100); // Small delay to allow MCP handshake to complete
 }
+
 
 runServer().catch((error) => {
   emergency("Fatal error running server:", error);
