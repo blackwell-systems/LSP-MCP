@@ -1,7 +1,40 @@
-# LSP MCP Server
+# LSP MCP Server (Improved)
 
 An MCP (Model Context Protocol) server for interacting with LSP (Language Server Protocol) interface.
 This server acts as a bridge that allows LLMs to query LSP Hover and Completion providers.
+
+**This is an improved fork with enhanced TypeScript support, better MCP compatibility, and optimized performance for large repositories.**
+
+## Key Improvements
+
+1. **True Server-Client Architecture**: Enhanced compatibility with large repositories by maintaining a persistent server process, reducing false positives/negatives from re-initializations.
+
+2. **TypeScript Best Practices**: Recommended use of `typescript-language-server` for better support and compatibility compared to VTSLS.
+
+3. **LLM Agent Optimization**: Efficient workflow for LLM agents:
+   - Start the server once per session
+   - Open files that need tracking (required for diagnostics)
+   - Use global diagnostics (without `file_path`) for better accuracy and freshness
+
+## Architecture Benefits
+
+### Persistent Server Process
+
+Unlike many MCP LSP implementations that spawn a new language server process for each request, this server maintains a persistent LSP connection. This approach provides:
+
+- **Reduced Initialization Overhead**: Language servers can take time to parse project files, load configurations, and build internal state
+- **Accurate Diagnostics**: Persistent state allows the language server to maintain up-to-date error/warning information
+- **Better Performance**: Eliminates the startup cost for each request, especially important for large codebases
+- **Consistent State**: File tracking and workspace understanding persists across requests
+
+### TypeScript Integration
+
+For TypeScript projects, this server uses `typescript-language-server` rather than VTSLS (VS Code TypeScript Language Service) because:
+
+- **Better MCP Compatibility**: More reliable diagnostic reporting and fewer edge cases
+- **Proper Configuration Handling**: Better support for `tsconfig.json`, path mappings, and workspace folders
+- **JSX/TSX Support**: Correct handling of React components with `typescriptreact` language ID
+- **Stable API**: More predictable LSP protocol implementation
 
 ## Overview
 
@@ -125,10 +158,34 @@ Run the MCP server by providing the path to the LSP executable and any arguments
 npx tritlo/lsp-mcp <language> /path/to/lsp [lsp-args...]
 ```
 
-For example:
+### Language-Specific Examples
+
+#### TypeScript (Recommended)
+```bash
+npx bfulop/lsp-mcp-improved typescript typescript-language-server --stdio
 ```
-npx tritlo/lsp-mcp haskell /usr/bin/haskell-language-server-wrapper lsp
+
+#### Haskell
+```bash
+npx bfulop/lsp-mcp-improved haskell /usr/bin/haskell-language-server-wrapper lsp
 ```
+
+### TypeScript Setup
+
+For optimal TypeScript support:
+
+1. **Install typescript-language-server**:
+   ```bash
+   npm install -g typescript-language-server typescript
+   ```
+
+2. **Use correct language IDs**:
+   - `.ts` files: `typescript`
+   - `.tsx` files: `typescriptreact`
+   - `.js` files: `javascript`
+   - `.jsx` files: `javascriptreact`
+
+3. **Project Structure**: Ensure your project has a `tsconfig.json` at the root for proper configuration loading
 
 ### Important: Starting the LSP Server
 
@@ -352,13 +409,15 @@ Example for a specific file:
 }
 ```
 
-Example for all open files:
+Example for all open files (recommended):
 ```json
 {
   "tool": "get_diagnostics",
   "arguments": {}
 }
 ```
+
+**Note for LLM Agents**: Using `get_diagnostics` without a `file_path` parameter is recommended as it provides more up-to-date results than file-specific queries. The global approach immediately reflects external file changes and is more reliable for detecting compilation errors across the entire project.
 
 ### set_log_level
 
@@ -482,8 +541,12 @@ Currently, the following extensions are available:
 
 Extensions are loaded automatically when you specify a language ID when starting the server:
 
-```
-npx tritlo/lsp-mcp haskell /path/to/haskell-language-server-wrapper lsp
+```bash
+# Haskell with extension
+npx bfulop/lsp-mcp-improved haskell /path/to/haskell-language-server-wrapper lsp
+
+# TypeScript (uses improved TypeScript integration)
+npx bfulop/lsp-mcp-improved typescript typescript-language-server --stdio
 ```
 
 ### Extension Namespacing
@@ -509,7 +572,46 @@ To create a new extension:
 
 The extension system will automatically load your extension when the matching language ID is specified.
 
+## Best Practices for LLM Agents
+
+### Recommended Workflow
+
+For optimal performance when using this server with LLM agents:
+
+1. **Initialize Once**: Start the LSP server once per session using `start_lsp` with your project root
+2. **Open Files for Tracking**: Use `open_document` for any files you plan to edit or analyze
+3. **Use Global Diagnostics**: Call `get_diagnostics` without `file_path` for the most accurate and up-to-date error reporting
+4. **Leverage Persistent State**: The server maintains file state across requests, eliminating re-initialization overhead
+
+### Diagnostic Accuracy
+
+The global diagnostics approach (`get_diagnostics` without file parameters) is more reliable than file-specific queries because:
+
+- It immediately reflects changes made outside the MCP session
+- It provides comprehensive project-wide error detection
+- It avoids stale cache issues that can occur with file-specific requests
+- It captures cross-file dependencies and import errors more effectively
+
+### Performance Considerations
+
+- **Large Repositories**: The persistent server architecture significantly reduces startup overhead for large codebases
+- **TypeScript Projects**: Use `typescript-language-server` for better compatibility and more accurate diagnostics
+- **File Management**: Close files with `close_document` when done to manage memory usage in long-running sessions
+
+### Language-Specific Tips
+
+#### TypeScript/JavaScript
+- Always use correct language IDs: `typescript`, `typescriptreact`, `javascript`, `javascriptreact`
+- Ensure `tsconfig.json` is properly configured and located at project root
+- Install `typescript-language-server` globally for best results
+
+#### Haskell
+- Use the Haskell extension for specialized prompts and typed-hole exploration
+- Ensure `haskell-language-server` is properly installed and accessible
+
 ## Acknowledgments
 
 - HLS team for the Language Server Protocol implementation
 - Anthropic for the Model Context Protocol specification
+- Original implementation by tritlo
+- Enhanced TypeScript integration and MCP compatibility improvements
