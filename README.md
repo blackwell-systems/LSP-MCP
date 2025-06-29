@@ -31,10 +31,9 @@ Unlike many MCP LSP implementations that spawn a new language server process for
 
 For TypeScript projects, this server uses `typescript-language-server` rather than VTSLS (VS Code TypeScript Language Service) because:
 
-- **Better MCP Compatibility**: More reliable diagnostic reporting and fewer edge cases
-- **Proper Configuration Handling**: Better support for `tsconfig.json`, path mappings, and workspace folders
-- **JSX/TSX Support**: Correct handling of React components with `typescriptreact` language ID
-- **Stable API**: More predictable LSP protocol implementation
+- **Reliable LSP Protocol Implementation**: In our testing, `typescript-language-server` consistently sent diagnostic messages through the LSP protocol, while VTSLS failed to provide diagnostics in the MCP context
+- **Better MCP Compatibility**: More predictable behavior when used as a persistent server process
+
 
 ## Overview
 
