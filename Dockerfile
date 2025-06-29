@@ -5,18 +5,20 @@ RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Install TypeScript globally first (needed for build)
+RUN npm install -g typescript typescript-language-server
 
-# Install dependencies including typescript-language-server
-RUN npm ci --only=production && \
-    npm install -g typescript-language-server typescript
-
-# Copy source code
+# Copy source code and configuration
 COPY . .
+
+# Install all dependencies (including dev dependencies needed for build)
+RUN npm ci
 
 # Build the project
 RUN npm run build
+
+# Remove dev dependencies to reduce image size
+RUN npm prune --production
 
 # Create a non-root user for security
 RUN addgroup -g 1001 -S lsp && \
