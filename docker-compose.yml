@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  lsp-mcp:
+    build: .
+    volumes:
+      # Mount any workspace directory - configurable via environment variable
+      - ${WORKSPACE_DIR:-./workspace}:/workspace:ro
+    stdin_open: true
+    tty: true
+    # Resource limits to prevent TypeScript language server from consuming too much memory
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    environment:
+      # Set environment variables for better TypeScript performance
+      - NODE_OPTIONS=--max-old-space-size=3072
+      - TSC_NONPOLLING_WATCHER=true
