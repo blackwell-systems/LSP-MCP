@@ -30,5 +30,8 @@ RUN chown -R lsp:lsp /app
 # Switch to non-root user
 USER lsp
 
+# Set working directory to workspace for proper LSP operation
+WORKDIR /workspace
+
 # Set the entrypoint
-ENTRYPOINT ["node", "dist/index.js", "typescript", "/usr/local/bin/typescript-language-server", "--stdio"]
+ENTRYPOINT ["node", "/app/dist/index.js", "typescript", "/usr/local/bin/typescript-language-server", "--stdio"]
