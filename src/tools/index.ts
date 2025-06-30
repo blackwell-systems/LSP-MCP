@@ -256,13 +256,11 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
           // Get diagnostics for a specific file or all files
           if (args.file_path) {
             // For a specific file
-            debug(`Getting diagnostics for file: ${args.file_path}`);
+            debug(`Reopening and getting diagnostics for file: ${args.file_path}`);
             const fileUri = createFileUri(args.file_path);
 
-            // Verify the file is open
-            if (!lspClient!.isDocumentOpen(fileUri)) {
-              throw new Error(`File ${args.file_path} is not open. Please open the file with open_document before requesting diagnostics.`);
-            }
+            // Reopen the file to get the latest content
+            await lspClient!.reopenDocument(fileUri);
 
             const diagnostics = lspClient!.getDiagnostics(fileUri);
 
@@ -274,7 +272,8 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
             };
           } else {
             // For all files
-            debug("Getting diagnostics for all files");
+            debug("Reopening all documents and getting diagnostics for all files");
+            await lspClient!.reopenAllDocuments();
             const allDiagnostics = lspClient!.getAllDiagnostics();
 
             // Convert Map to object for JSON serialization

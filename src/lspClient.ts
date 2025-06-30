@@ -18,6 +18,10 @@ export class LSPClient {
   private processingQueue: boolean = false;
   private documentDiagnostics: Map<string, any[]> = new Map();
   private diagnosticSubscribers: Set<DiagnosticUpdateCallback> = new Set();
+  
+  // Track file metadata for reopening
+  private filePaths: Map<string, string> = new Map(); // uri -> originalPath
+  private fileLanguageIds: Map<string, string> = new Map(); // uri -> languageId
 
   constructor(lspServerPath: string, lspServerArgs: string[] = []) {
     this.lspServerPath = lspServerPath;
@@ -415,6 +419,14 @@ export class LSPClient {
     // Mark document as open and initialize version
     this.openedDocuments.add(uri);
     this.documentVersions.set(uri, 1);
+    
+    // Store metadata for future reopening
+    if (!this.filePaths.has(uri)) {
+      // Extract original file path from URI for later reopening
+      const originalPath = uri.replace(/^file:\/\//, '');
+      this.filePaths.set(uri, originalPath);
+    }
+    this.fileLanguageIds.set(uri, languageId);
   }
 
   // Check if a document is open
@@ -574,6 +586,53 @@ export class LSPClient {
     }
 
     return [];
+  }
+
+  // Reopen a specific document to get latest content from disk
+  async reopenDocument(uri: string): Promise<void> {
+    const filePath = this.filePaths.get(uri);
+    const languageId = this.fileLanguageIds.get(uri);
+    
+    if (filePath && languageId) {
+      debug(`Reopening document: ${uri}`);
+      
+      // Close the document first if it's open
+      if (this.isDocumentOpen(uri)) {
+        await this.closeDocument(uri);
+      }
+      
+      // Read the file content from disk and reopen the document
+      try {
+        const fs = await import('fs/promises');
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        await this.openDocument(uri, fileContent, languageId);
+        debug(`Successfully reopened document: ${uri}`);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logError(`Error reopening document ${uri}: ${errorMessage}`);
+        throw new Error(`Failed to reopen document ${uri}: ${errorMessage}`);
+      }
+    } else {
+      throw new Error(`Cannot reopen document ${uri}: missing file path or language ID metadata`);
+    }
+  }
+
+  // Reopen all previously opened documents to get latest content
+  async reopenAllDocuments(): Promise<void> {
+    debug(`Reopening all documents (${this.filePaths.size} files)`);
+    
+    const reopenPromises = Array.from(this.filePaths.keys()).map(uri => 
+      this.reopenDocument(uri)
+    );
+    
+    try {
+      await Promise.all(reopenPromises);
+      debug(`Successfully reopened all ${reopenPromises.length} documents`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logError(`Error reopening documents: ${errorMessage}`);
+      throw new Error(`Failed to reopen some documents: ${errorMessage}`);
+    }
   }
 
   async shutdown(): Promise<void> {

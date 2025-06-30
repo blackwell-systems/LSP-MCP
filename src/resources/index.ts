@@ -66,19 +66,18 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
 
         if (filePath && filePath !== '/') {
           // For a specific file
-          debug(`Getting diagnostics for file: ${filePath}`);
+          debug(`Reopening and getting diagnostics for file: ${filePath}`);
           const fileUri = createFileUri(filePath);
 
-          // Verify the file is open
-          if (!lspClient!.isDocumentOpen(fileUri)) {
-            throw new Error(`File ${filePath} is not open. Please open the file with open_document before requesting diagnostics.`);
-          }
+          // Reopen the file to get the latest content
+          await lspClient!.reopenDocument(fileUri);
 
           const diagnostics = lspClient!.getDiagnostics(fileUri);
           diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
         } else {
           // For all files
-          debug("Getting diagnostics for all files");
+          debug("Reopening all documents and getting diagnostics for all files");
+          await lspClient!.reopenAllDocuments();
           const allDiagnostics = lspClient!.getAllDiagnostics();
 
           // Convert Map to object for JSON serialization
