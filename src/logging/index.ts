@@ -7,7 +7,7 @@ const originalConsoleError = console.error;
 
 // Current log level - can be changed at runtime
 // Initialize with default or from environment variable
-let logLevel: LoggingLevel = (process.env.LOG_LEVEL as LoggingLevel) || 'info';
+let logLevel: LoggingLevel = (process.env.LOG_LEVEL as LoggingLevel) || 'debug';
 
 // Validate that the log level is valid, default to 'info' if not
 if (!['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'].includes(logLevel)) {

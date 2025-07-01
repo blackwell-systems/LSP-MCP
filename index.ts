@@ -391,17 +391,16 @@ async function runServer() {
   
   // Wait a brief moment for the MCP initialization handshake to complete
   // before enabling notifications
-  setTimeout(() => {
+  setTimeout(async () => {
     markServerInitialized();
     info("Using LSP server:", lspServerPath);
     if (lspServerArgs.length > 0) {
       info("With arguments:", lspServerArgs.join(' '));
     }
     
-    // Create LSP client instance but don't start the process or initialize yet
-    // Both will happen when start_lsp is called
+    // Create LSP client instance and immediately initialize it
     lspClient = new LSPClient(lspServerPath, lspServerArgs);
-    info("LSP client created. Use the start_lsp tool to start and initialize with a root directory.");
+    await lspClient.initialize('/workspace');
   }, 100); // Small delay to allow MCP handshake to complete
 }
 

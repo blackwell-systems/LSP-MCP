@@ -43,12 +43,7 @@ This server provides access to Language Server Protocol (LSP) features through M
 
 ## Getting Started
 
-1. First, start the LSP server with a root directory:
-   \`\`\`
-   start_lsp(root_dir: "/path/to/your/project")
-   \`\`\`
-
-2. Open a file for analysis:
+1. Open a file for analysis:
    \`\`\`
    open_document(file_path: "/path/to/your/project/src/file.ts", language_id: "typescript")
    \`\`\`
@@ -61,17 +56,16 @@ This server provides access to Language Server Protocol (LSP) features through M
 - **get_diagnostics**: Get errors and warnings for open files
 - **open_document**: Open a file for analysis
 - **close_document**: Close a file when done
-- **restart_lsp_server**: Restart the LSP server if needed
+- **restart_lsp_server**: Restart the LSP server process if needed
 - **set_log_level**: Control the server's logging verbosity
 
 ## Workflow Example
 
-1. Start LSP: \`start_lsp(root_dir: "/my/project")\`
-2. Open file: \`open_document(file_path: "/my/project/src/app.ts", language_id: "typescript")\`
-3. Get diagnostics: \`get_diagnostics(file_path: "/my/project/src/app.ts")\`
-4. Get hover info: \`get_info_on_location(file_path: "/my/project/src/app.ts", line: 10, character: 15, language_id: "typescript")\`
-5. Get completions: \`get_completions(file_path: "/my/project/src/app.ts", line: 12, character: 8, language_id: "typescript")\`
-6. Close file when done: \`close_document(file_path: "/my/project/src/app.ts")\`
+1. Open file: \`open_document(file_path: "/my/project/src/app.ts", language_id: "typescript")\`
+2. Get diagnostics: \`get_diagnostics(file_path: "/my/project/src/app.ts")\`
+3. Get hover info: \`get_info_on_location(file_path: "/my/project/src/app.ts", line: 10, character: 15, language_id: "typescript")\`
+4. Get completions: \`get_completions(file_path: "/my/project/src/app.ts", line: 12, character: 8, language_id: "typescript")\`
+5. Close file when done: \`close_document(file_path: "/my/project/src/app.ts")\`
 
 Remember that line and character positions are 1-based (first line is 1, first character is 1), but LSP internally uses 0-based positions.`,
             },

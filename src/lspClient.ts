@@ -215,7 +215,7 @@ export class LSPClient {
   private sendRequest<T>(method: string, params?: any): Promise<T> {
     // Check if the process is started
     if (!this.process) {
-      return Promise.reject(new Error("LSP process not started. Please call start_lsp first."));
+      return Promise.reject(new Error("LSP server not initialized yet"));
     }
 
     const id = this.nextId++;
@@ -269,7 +269,7 @@ export class LSPClient {
   private sendNotification(method: string, params?: any): void {
     // Check if the process is started
     if (!this.process) {
-      console.error("LSP process not started. Please call start_lsp first.");
+      console.error("LSP server not initialized yet");
       return;
     }
 
@@ -379,7 +379,7 @@ export class LSPClient {
   async openDocument(uri: string, text: string, languageId: string): Promise<void> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
-      throw new Error("LSP client not initialized. Please call start_lsp first.");
+      throw new Error("LSP server not initialized yet");
     }
 
     // If document is already open, update it instead of reopening
@@ -443,7 +443,7 @@ export class LSPClient {
   async closeDocument(uri: string): Promise<void> {
     // Check if initialized
     if (!this.initialized) {
-      throw new Error("LSP client not initialized. Please call start_lsp first.");
+      throw new Error("LSP server not initialized yet");
     }
 
     // Only close if document is open
@@ -509,7 +509,7 @@ export class LSPClient {
   async getInfoOnLocation(uri: string, position: { line: number, character: number }): Promise<string> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
-      throw new Error("LSP client not initialized. Please call start_lsp first.");
+      throw new Error("LSP server not initialized yet");
     }
 
     debug(`Getting info on location: ${uri} (${position.line}:${position.character})`);
@@ -542,7 +542,7 @@ export class LSPClient {
   async getCompletion(uri: string, position: { line: number, character: number }): Promise<any[]> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
-      throw new Error("LSP client not initialized. Please call start_lsp first.");
+      throw new Error("LSP server not initialized yet");
     }
 
     debug(`Getting completions at location: ${uri} (${position.line}:${position.character})`);
@@ -568,7 +568,7 @@ export class LSPClient {
   async getCodeActions(uri: string, range: { start: { line: number, character: number }, end: { line: number, character: number } }): Promise<any[]> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
-      throw new Error("LSP client not initialized. Please call start_lsp first.");
+      throw new Error("LSP server not initialized yet");
     }
 
     debug(`Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`);
@@ -742,7 +742,7 @@ export class LSPClient {
       await this.initialize(rootDirectory);
       notice(`LSP server restarted and initialized with root directory: ${rootDirectory}`);
     } else {
-      info("LSP server restarted but not initialized. Call start_lsp to initialize.");
+      info("LSP server restarted but not initialized. Please initialize the server before use.");
     }
   }
 }

@@ -103,10 +103,4 @@ export const SetLogLevelArgsSchema = z.object({
     .describe("The logging level to set")
 });
 
-export const RestartLSPServerArgsSchema = z.object({
-  root_dir: z.string().optional().describe("The root directory for the LSP server. If not provided, the server will not be initialized automatically."),
-});
 
-export const StartLSPArgsSchema = z.object({
-  root_dir: z.string().describe("The root directory for the LSP server"),
-});
