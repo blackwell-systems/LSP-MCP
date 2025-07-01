@@ -64,6 +64,51 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
 
         let diagnosticsContent: string;
 
+        // Helper function to wait for diagnostics to stabilize after reopening
+        const waitForDiagnostics = async (targetUris: string[], timeoutMs: number = 3000): Promise<void> => {
+          debug(`Waiting up to ${timeoutMs}ms for diagnostics to stabilize for ${targetUris.length} files`);
+          
+          const startTime = Date.now();
+          let lastDiagnosticTime = startTime;
+          
+          return new Promise((resolve) => {
+            // Set up a listener for diagnostic updates
+            const checkStability = () => {
+              const now = Date.now();
+              const timeSinceLastUpdate = now - lastDiagnosticTime;
+              const totalElapsed = now - startTime;
+              
+              // If we've waited long enough since the last update, or we've hit the timeout
+              if (timeSinceLastUpdate >= 500 || totalElapsed >= timeoutMs) {
+                debug(`Diagnostics stabilized after ${totalElapsed}ms (${timeSinceLastUpdate}ms since last update)`);
+                resolve();
+                return;
+              }
+              
+              // Check again in 100ms
+              setTimeout(checkStability, 100);
+            };
+            
+            // Subscribe to diagnostic updates to track when they change
+            const diagnosticListener = (uri: string, diagnostics: any[]) => {
+              if (targetUris.includes(uri)) {
+                lastDiagnosticTime = Date.now();
+                debug(`Received diagnostic update for ${uri}: ${diagnostics.length} diagnostics`);
+              }
+            };
+            
+            lspClient!.subscribeToDiagnostics(diagnosticListener);
+            
+            // Start the stability check
+            setTimeout(checkStability, 100);
+            
+            // Clean up the listener when we're done
+            setTimeout(() => {
+              lspClient!.unsubscribeFromDiagnostics(diagnosticListener);
+            }, timeoutMs + 1000);
+          });
+        };
+
         if (filePath && filePath !== '/') {
           // For a specific file
           debug(`Reopening and getting diagnostics for file: ${filePath}`);
@@ -71,13 +116,24 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
 
           // Reopen the file to get the latest content
           await lspClient!.reopenDocument(fileUri);
+          
+          // Wait for diagnostics to stabilize
+          await waitForDiagnostics([fileUri]);
 
           const diagnostics = lspClient!.getDiagnostics(fileUri);
+          debug(`Final diagnostics for ${fileUri}: ${diagnostics.length} items`);
           diagnosticsContent = JSON.stringify({ [fileUri]: diagnostics }, null, 2);
         } else {
           // For all files
           debug("Reopening all documents and getting diagnostics for all files");
           await lspClient!.reopenAllDocuments();
+          
+          // Get all currently open file URIs for waiting
+          const openUris = lspClient!.getOpenDocuments();
+          
+          // Wait for diagnostics to stabilize for all files
+          await waitForDiagnostics(openUris);
+          
           const allDiagnostics = lspClient!.getAllDiagnostics();
 
           // Convert Map to object for JSON serialization

@@ -456,6 +456,10 @@ export class LSPClient {
       // Remove from tracking
       this.openedDocuments.delete(uri);
       this.documentVersions.delete(uri);
+      
+      // Remove from file tracking maps
+      this.filePaths.delete(uri);
+      this.fileLanguageIds.delete(uri);
     } else {
       debug(`Document not open: ${uri}`);
     }
@@ -593,18 +597,34 @@ export class LSPClient {
     const filePath = this.filePaths.get(uri);
     const languageId = this.fileLanguageIds.get(uri);
     
+    debug(`Attempting to reopen document ${uri}: filePath=${filePath}, languageId=${languageId}`);
+    debug(`Current tracking maps - filePaths: ${JSON.stringify(Array.from(this.filePaths.entries()))}, fileLanguageIds: ${JSON.stringify(Array.from(this.fileLanguageIds.entries()))}`);
+    debug(`Currently open documents: ${Array.from(this.openedDocuments).join(', ')}`);
+    
     if (filePath && languageId) {
       debug(`Reopening document: ${uri}`);
       
-      // Close the document first if it's open
+      // Close the document first if it's open, but don't remove tracking info
       if (this.isDocumentOpen(uri)) {
-        await this.closeDocument(uri);
+        debug(`Document ${uri} is currently open, closing it first`);
+        // Send close notification but preserve tracking
+        this.sendNotification("textDocument/didClose", {
+          textDocument: { uri }
+        });
+        
+        // Remove from open tracking but preserve file metadata
+        this.openedDocuments.delete(uri);
+        this.documentVersions.delete(uri);
+      } else {
+        debug(`Document ${uri} is not currently open`);
       }
       
       // Read the file content from disk and reopen the document
       try {
         const fs = await import('fs/promises');
+        debug(`Reading file content from: ${filePath}`);
         const fileContent = await fs.readFile(filePath, 'utf-8');
+        debug(`File content length: ${fileContent.length} characters`);
         await this.openDocument(uri, fileContent, languageId);
         debug(`Successfully reopened document: ${uri}`);
       } catch (error) {
@@ -613,7 +633,9 @@ export class LSPClient {
         throw new Error(`Failed to reopen document ${uri}: ${errorMessage}`);
       }
     } else {
-      throw new Error(`Cannot reopen document ${uri}: missing file path or language ID metadata`);
+      const errorMsg = `Cannot reopen document ${uri}: missing file path (${filePath}) or language ID (${languageId}) metadata`;
+      logError(errorMsg);
+      throw new Error(errorMsg);
     }
   }
 
@@ -621,7 +643,15 @@ export class LSPClient {
   async reopenAllDocuments(): Promise<void> {
     debug(`Reopening all documents (${this.filePaths.size} files)`);
     
-    const reopenPromises = Array.from(this.filePaths.keys()).map(uri => 
+    // Capture the URIs to avoid concurrent modification during iteration
+    const urisToReopen = Array.from(this.filePaths.keys());
+    
+    if (urisToReopen.length === 0) {
+      debug("No documents to reopen");
+      return;
+    }
+    
+    const reopenPromises = urisToReopen.map(uri => 
       this.reopenDocument(uri)
     );
     
@@ -699,6 +729,10 @@ export class LSPClient {
     this.processingQueue = false;
     this.documentDiagnostics.clear();
     this.clearDiagnosticSubscribers();
+    
+    // Clear file tracking maps
+    this.filePaths.clear();
+    this.fileLanguageIds.clear();
 
     // Start a new process
     this.startProcess();
