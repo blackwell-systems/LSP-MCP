@@ -4,6 +4,7 @@ import { DiagnosticUpdateCallback, ResourceHandler, SubscriptionContext, Subscri
 import { LSPClient } from "../lspClient.js";
 import { createFileUri, checkLspClientInitialized } from "../tools/index.js";
 import { debug, logError } from "../logging/index.js";
+import { waitForDiagnostics } from "../shared/waitForDiagnostics.js";
 
 // Helper function to parse a URI path
 export const parseUriPath = (uri: URL): string => {
@@ -64,50 +65,6 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
 
         let diagnosticsContent: string;
 
-        // Helper function to wait for diagnostics to stabilize after reopening
-        const waitForDiagnostics = async (targetUris: string[], timeoutMs: number = 3000): Promise<void> => {
-          debug(`Waiting up to ${timeoutMs}ms for diagnostics to stabilize for ${targetUris.length} files`);
-          
-          const startTime = Date.now();
-          let lastDiagnosticTime = startTime;
-          
-          return new Promise((resolve) => {
-            // Set up a listener for diagnostic updates
-            const checkStability = () => {
-              const now = Date.now();
-              const timeSinceLastUpdate = now - lastDiagnosticTime;
-              const totalElapsed = now - startTime;
-              
-              // If we've waited long enough since the last update, or we've hit the timeout
-              if (timeSinceLastUpdate >= 500 || totalElapsed >= timeoutMs) {
-                debug(`Diagnostics stabilized after ${totalElapsed}ms (${timeSinceLastUpdate}ms since last update)`);
-                resolve();
-                return;
-              }
-              
-              // Check again in 100ms
-              setTimeout(checkStability, 100);
-            };
-            
-            // Subscribe to diagnostic updates to track when they change
-            const diagnosticListener = (uri: string, diagnostics: any[]) => {
-              if (targetUris.includes(uri)) {
-                lastDiagnosticTime = Date.now();
-                debug(`Received diagnostic update for ${uri}: ${diagnostics.length} diagnostics`);
-              }
-            };
-            
-            lspClient!.subscribeToDiagnostics(diagnosticListener);
-            
-            // Start the stability check
-            setTimeout(checkStability, 100);
-            
-            // Clean up the listener when we're done
-            setTimeout(() => {
-              lspClient!.unsubscribeFromDiagnostics(diagnosticListener);
-            }, timeoutMs + 1000);
-          });
-        };
 
         if (filePath && filePath !== '/') {
           // For a specific file
@@ -118,7 +75,7 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
           await lspClient!.reopenDocument(fileUri);
           
           // Wait for diagnostics to stabilize
-          await waitForDiagnostics([fileUri]);
+          await waitForDiagnostics(lspClient!, [fileUri]);
 
           const diagnostics = lspClient!.getDiagnostics(fileUri);
           debug(`Final diagnostics for ${fileUri}: ${diagnostics.length} items`);
@@ -132,7 +89,7 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
           const openUris = lspClient!.getOpenDocuments();
           
           // Wait for diagnostics to stabilize for all files
-          await waitForDiagnostics(openUris);
+          await waitForDiagnostics(lspClient!, openUris);
           
           const allDiagnostics = lspClient!.getAllDiagnostics();
 

@@ -16,6 +16,7 @@ import {
 import { LSPClient } from "../lspClient.js";
 import { debug, info, logError, notice, warning, setLogLevel } from "../logging/index.js";
 import { activateExtension, deactivateExtension, listActiveExtensions } from "../extensions/index.js";
+import { waitForDiagnostics } from "../shared/waitForDiagnostics.js";
 
 // Create a file URI from a file path
 export const createFileUri = (filePath: string): string => {
@@ -197,6 +198,9 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
             // Reopen the file to get the latest content
             await lspClient!.reopenDocument(fileUri);
 
+            // Wait for diagnostics to stabilize
+            await waitForDiagnostics(lspClient!, [fileUri]);
+
             const diagnostics = lspClient!.getDiagnostics(fileUri);
 
             return {
@@ -209,6 +213,13 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
             // For all files
             debug("Reopening all documents and getting diagnostics for all files");
             await lspClient!.reopenAllDocuments();
+            
+            // Get all open document URIs
+            const openDocumentUris = lspClient!.getOpenDocuments();
+            
+            // Wait for diagnostics to stabilize for all open documents
+            await waitForDiagnostics(lspClient!, openDocumentUris);
+            
             const allDiagnostics = lspClient!.getAllDiagnostics();
 
             // Convert Map to object for JSON serialization
