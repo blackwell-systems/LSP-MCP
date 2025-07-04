@@ -1,14 +1,28 @@
 import { spawn } from "child_process";
 import path from "path";
-import { LSPMessage, DiagnosticUpdateCallback, LoggingLevel } from "./types/index.js";
-import { debug, info, notice, warning, log, logError } from "./logging/index.js";
+import {
+  LSPMessage,
+  DiagnosticUpdateCallback,
+  LoggingLevel,
+} from "./types/index.js";
+import {
+  debug,
+  info,
+  notice,
+  warning,
+  log,
+  logError,
+} from "./logging/index.js";
 
 export class LSPClient {
   private process: any;
   private buffer: string = "";
   private messageQueue: LSPMessage[] = [];
   private nextId: number = 1;
-  private responsePromises: Map<string | number, { resolve: Function; reject: Function }> = new Map();
+  private responsePromises: Map<
+    string | number,
+    { resolve: Function; reject: Function }
+  > = new Map();
   private initialized: boolean = false;
   private serverCapabilities: any = null;
   private lspServerPath: string;
@@ -18,7 +32,7 @@ export class LSPClient {
   private processingQueue: boolean = false;
   private documentDiagnostics: Map<string, any[]> = new Map();
   private diagnosticSubscribers: Set<DiagnosticUpdateCallback> = new Set();
-  
+
   // Track file metadata for reopening
   private filePaths: Map<string, string> = new Map(); // uri -> originalPath
   private fileLanguageIds: Map<string, string> = new Map(); // uri -> languageId
@@ -31,10 +45,10 @@ export class LSPClient {
 
   private startProcess(): void {
     info(`Starting LSP client with binary: ${this.lspServerPath}`);
-    info(`Using LSP server arguments: ${this.lspServerArgs.join(' ')}`);
+    info(`Using LSP server arguments: ${this.lspServerArgs.join(" ")}`);
     this.process = spawn(this.lspServerPath, this.lspServerArgs, {
       stdio: ["pipe", "pipe", "pipe"],
-      cwd: '/workspace'
+      cwd: "/workspace",
     });
 
     // Set up event listeners
@@ -55,7 +69,9 @@ export class LSPClient {
     // Implement a safety limit to prevent excessive buffer growth
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
     if (this.buffer.length > MAX_BUFFER_SIZE) {
-      logError(`Buffer size exceeded ${MAX_BUFFER_SIZE} bytes, clearing buffer to prevent memory issues`);
+      logError(
+        `Buffer size exceeded ${MAX_BUFFER_SIZE} bytes, clearing buffer to prevent memory issues`,
+      );
       this.buffer = this.buffer.substring(this.buffer.length - MAX_BUFFER_SIZE);
     }
 
@@ -70,7 +86,9 @@ export class LSPClient {
 
       // Prevent processing unreasonably large messages
       if (contentLength > MAX_BUFFER_SIZE) {
-        logError(`Received message with content length ${contentLength} exceeds maximum size, skipping`);
+        logError(
+          `Received message with content length ${contentLength} exceeds maximum size, skipping`,
+        );
         this.buffer = this.buffer.substring(headerEnd + contentLength);
         continue;
       }
@@ -81,12 +99,14 @@ export class LSPClient {
       // Extract the message content - using exact content length without including the header
       let content = this.buffer.substring(headerEnd, headerEnd + contentLength);
       // Make the parsing more robust by ensuring content ends with a closing brace
-      if (content[content.length - 1] !== '}') {
+      if (content[content.length - 1] !== "}") {
         debug("Content doesn't end with '}', adjusting...");
-        const lastBraceIndex = content.lastIndexOf('}');
+        const lastBraceIndex = content.lastIndexOf("}");
         if (lastBraceIndex !== -1) {
           const actualContentLength = lastBraceIndex + 1;
-          debug(`Adjusted content length from ${contentLength} to ${actualContentLength}`);
+          debug(
+            `Adjusted content length from ${contentLength} to ${actualContentLength}`,
+          );
           content = content.substring(0, actualContentLength);
           // Update buffer position based on actual content length
           this.buffer = this.buffer.substring(headerEnd + actualContentLength);
@@ -100,7 +120,6 @@ export class LSPClient {
         // Content looks good, remove precisely this processed message from buffer
         this.buffer = this.buffer.substring(headerEnd + contentLength);
       }
-
 
       // Parse the message and add to queue
       try {
@@ -132,10 +151,10 @@ export class LSPClient {
   private async handleMessage(message: LSPMessage): Promise<void> {
     // Log the message with appropriate level
     try {
-      const direction = 'RECEIVED';
+      const direction = "RECEIVED";
       const messageStr = JSON.stringify(message, null, 2);
       // Use method to determine log level if available, otherwise use debug
-      const method = message.method || '';
+      const method = message.method || "";
       const logLevel = this.getLSPMethodLogLevel(method);
       log(logLevel, `LSP ${direction} (${method}): ${messageStr}`);
     } catch (error) {
@@ -143,7 +162,10 @@ export class LSPClient {
     }
 
     // Handle response messages
-    if ('id' in message && (message.result !== undefined || message.error !== undefined)) {
+    if (
+      "id" in message &&
+      (message.result !== undefined || message.error !== undefined)
+    ) {
       const promise = this.responsePromises.get(message.id!);
       if (promise) {
         if (message.error) {
@@ -156,32 +178,42 @@ export class LSPClient {
     }
 
     // Store server capabilities from initialize response
-    if ('id' in message && message.result?.capabilities) {
+    if ("id" in message && message.result?.capabilities) {
       this.serverCapabilities = message.result.capabilities;
-      notice(`LSP Server Capabilities: ${JSON.stringify(this.serverCapabilities, null, 2)}`);
+      notice(
+        `LSP Server Capabilities: ${JSON.stringify(this.serverCapabilities, null, 2)}`,
+      );
     }
 
     // Handle notification messages
-    if ('method' in message && message.id === undefined) {
+    if ("method" in message && message.id === undefined) {
       // Handle diagnostic notifications
-      if (message.method === 'textDocument/publishDiagnostics' && message.params) {
+      if (
+        message.method === "textDocument/publishDiagnostics" &&
+        message.params
+      ) {
         const { uri, diagnostics } = message.params;
 
         if (uri && Array.isArray(diagnostics)) {
-          const severity = diagnostics.length > 0 ?
-            Math.min(...diagnostics.map(d => d.severity || 4)) : 4;
+          const severity =
+            diagnostics.length > 0
+              ? Math.min(...diagnostics.map((d) => d.severity || 4))
+              : 4;
 
           // Map LSP severity to our log levels
           const severityToLevel: Record<number, string> = {
-            1: 'error',      // Error
-            2: 'warning',    // Warning
-            3: 'info',       // Information
-            4: 'debug'       // Hint
+            1: "error", // Error
+            2: "warning", // Warning
+            3: "info", // Information
+            4: "debug", // Hint
           };
 
-          const level = severityToLevel[severity] || 'debug';
+          const level = severityToLevel[severity] || "debug";
 
-          log(level as any, `Received ${diagnostics.length} diagnostics for ${uri}`);
+          log(
+            level as any,
+            `Received ${diagnostics.length} diagnostics for ${uri}`,
+          );
 
           // Store diagnostics, replacing any previous ones for this URI
           this.documentDiagnostics.set(uri, diagnostics);
@@ -195,21 +227,28 @@ export class LSPClient {
 
   private getLSPMethodLogLevel(method: string): LoggingLevel {
     // Define appropriate log levels for different LSP methods
-    if (method.startsWith('textDocument/did')) {
-      return 'debug'; // Document changes are usually debug level
+    if (method.startsWith("textDocument/did")) {
+      return "debug"; // Document changes are usually debug level
     }
 
-    if (method.includes('diagnostic') || method.includes('publishDiagnostics')) {
-      return 'info'; // Diagnostics depend on their severity, but base level is info
+    if (
+      method.includes("diagnostic") ||
+      method.includes("publishDiagnostics")
+    ) {
+      return "info"; // Diagnostics depend on their severity, but base level is info
     }
 
-    if (method === 'initialize' || method === 'initialized' ||
-        method === 'shutdown' || method === 'exit') {
-      return 'notice'; // Important lifecycle events are notice level
+    if (
+      method === "initialize" ||
+      method === "initialized" ||
+      method === "shutdown" ||
+      method === "exit"
+    ) {
+      return "notice"; // Important lifecycle events are notice level
     }
 
     // Default to info level for easier debugging
-    return 'info';
+    return "info";
   }
 
   private sendRequest<T>(method: string, params?: any): Promise<T> {
@@ -223,12 +262,12 @@ export class LSPClient {
       jsonrpc: "2.0",
       id,
       method,
-      params
+      params,
     };
 
     // Log the request with appropriate level
     try {
-      const direction = 'SENT';
+      const direction = "SENT";
       const requestStr = JSON.stringify(request, null, 2);
       const logLevel = this.getLSPMethodLogLevel(method);
       log(logLevel as any, `LSP ${direction} (${method}): ${requestStr}`);
@@ -241,7 +280,9 @@ export class LSPClient {
       const timeoutId = setTimeout(() => {
         if (this.responsePromises.has(id)) {
           this.responsePromises.delete(id);
-          reject(new Error(`Timeout waiting for response to ${method} request`));
+          reject(
+            new Error(`Timeout waiting for response to ${method} request`),
+          );
         }
       }, 10000); // 10 second timeout
 
@@ -254,7 +295,7 @@ export class LSPClient {
         reject: (error: any) => {
           clearTimeout(timeoutId);
           reject(error);
-        }
+        },
       });
     });
 
@@ -276,12 +317,12 @@ export class LSPClient {
     const notification: LSPMessage = {
       jsonrpc: "2.0",
       method,
-      params
+      params,
     };
 
     // Log the notification with appropriate level
     try {
-      const direction = 'SENT';
+      const direction = "SENT";
       const notificationStr = JSON.stringify(notification, null, 2);
       const logLevel = this.getLSPMethodLogLevel(method);
       log(logLevel as any, `LSP ${direction} (${method}): ${notificationStr}`);
@@ -310,61 +351,61 @@ export class LSPClient {
         processId: process.pid,
         clientInfo: {
           name: "lsp-mcp-server",
-          version: "0.3.0"
+          version: "0.3.0",
         },
         rootUri: "file://" + resolvedRootDir,
         rootPath: resolvedRootDir,
         workspaceFolders: [
           {
             uri: "file://" + resolvedRootDir,
-            name: path.basename(resolvedRootDir)
-          }
+            name: path.basename(resolvedRootDir),
+          },
         ],
         initializationOptions: {
           preferences: {
             includeCompletionsForModuleExports: true,
-            includeCompletionsWithInsertText: true
+            includeCompletionsWithInsertText: true,
           },
           tsserver: {
-            useSeparateSyntaxServer: false
-          }
+            useSeparateSyntaxServer: false,
+          },
         },
         capabilities: {
           textDocument: {
             hover: {
-              contentFormat: ["markdown", "plaintext"]
+              contentFormat: ["markdown", "plaintext"],
             },
             completion: {
               completionItem: {
-                snippetSupport: false
-              }
+                snippetSupport: false,
+              },
             },
             codeAction: {
-              dynamicRegistration: true
+              dynamicRegistration: true,
             },
             diagnostic: {
-              dynamicRegistration: false
+              dynamicRegistration: false,
             },
             publishDiagnostics: {
               relatedInformation: true,
               versionSupport: false,
               tagSupport: {
-                valueSet: [1, 2] // Unnecessary and Deprecated
+                valueSet: [1, 2], // Unnecessary and Deprecated
               },
               codeDescriptionSupport: true,
-              dataSupport: true
-            }
+              dataSupport: true,
+            },
           },
           workspace: {
             configuration: true,
             didChangeConfiguration: {
-              dynamicRegistration: true
+              dynamicRegistration: true,
             },
             didChangeWatchedFiles: {
-              dynamicRegistration: true
-            }
-          }
-        }
+              dynamicRegistration: true,
+            },
+          },
+        },
       });
 
       this.sendNotification("initialized", {});
@@ -376,7 +417,11 @@ export class LSPClient {
     }
   }
 
-  async openDocument(uri: string, text: string, languageId: string): Promise<void> {
+  async openDocument(
+    uri: string,
+    text: string,
+    languageId: string,
+  ): Promise<void> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
       throw new Error("LSP server not initialized yet");
@@ -388,17 +433,19 @@ export class LSPClient {
       const currentVersion = this.documentVersions.get(uri) || 1;
       const newVersion = currentVersion + 1;
 
-      debug(`Document already open, updating content: ${uri} (version ${newVersion})`);
+      debug(
+        `Document already open, updating content: ${uri} (version ${newVersion})`,
+      );
       this.sendNotification("textDocument/didChange", {
         textDocument: {
           uri,
-          version: newVersion
+          version: newVersion,
         },
         contentChanges: [
           {
-            text // Full document update
-          }
-        ]
+            text, // Full document update
+          },
+        ],
       });
 
       // Update version
@@ -412,18 +459,18 @@ export class LSPClient {
         uri,
         languageId,
         version: 1,
-        text
-      }
+        text,
+      },
     });
 
     // Mark document as open and initialize version
     this.openedDocuments.add(uri);
     this.documentVersions.set(uri, 1);
-    
+
     // Store metadata for future reopening
     if (!this.filePaths.has(uri)) {
       // Extract original file path from URI for later reopening
-      const originalPath = uri.replace(/^file:\/\//, '');
+      const originalPath = uri.replace(/^file:\/\//, "");
       this.filePaths.set(uri, originalPath);
     }
     this.fileLanguageIds.set(uri, languageId);
@@ -450,13 +497,13 @@ export class LSPClient {
     if (this.openedDocuments.has(uri)) {
       debug(`Closing document: ${uri}`);
       this.sendNotification("textDocument/didClose", {
-        textDocument: { uri }
+        textDocument: { uri },
       });
 
       // Remove from tracking
       this.openedDocuments.delete(uri);
       this.documentVersions.delete(uri);
-      
+
       // Remove from file tracking maps
       this.filePaths.delete(uri);
       this.fileLanguageIds.delete(uri);
@@ -492,7 +539,7 @@ export class LSPClient {
 
   // Notify all subscribers about diagnostic updates
   private notifyDiagnosticUpdate(uri: string, diagnostics: any[]): void {
-    this.diagnosticSubscribers.forEach(callback => {
+    this.diagnosticSubscribers.forEach((callback) => {
       try {
         callback(uri, diagnostics);
       } catch (error) {
@@ -506,51 +553,65 @@ export class LSPClient {
     this.diagnosticSubscribers.clear();
   }
 
-  async getInfoOnLocation(uri: string, position: { line: number, character: number }): Promise<string> {
+  async getInfoOnLocation(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<string> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
       throw new Error("LSP server not initialized yet");
     }
 
-    debug(`Getting info on location: ${uri} (${position.line}:${position.character})`);
+    debug(
+      `Getting info on location: ${uri} (${position.line}:${position.character})`,
+    );
 
     try {
       // Use hover request to get information at the position
       const response = await this.sendRequest<any>("textDocument/hover", {
         textDocument: { uri },
-        position
+        position,
       });
 
       if (response?.contents) {
-        if (typeof response.contents === 'string') {
+        if (typeof response.contents === "string") {
           return response.contents;
         } else if (response.contents.value) {
           return response.contents.value;
         } else if (Array.isArray(response.contents)) {
-          return response.contents.map((item: any) =>
-            typeof item === 'string' ? item : item.value || ''
-          ).join('\n');
+          return response.contents
+            .map((item: any) =>
+              typeof item === "string" ? item : item.value || "",
+            )
+            .join("\n");
         }
       }
     } catch (error) {
-      warning(`Error getting hover information: ${error instanceof Error ? error.message : String(error)}`);
+      warning(
+        `Error getting hover information: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
-    return '';
+    return "";
   }
 
-  async getCompletion(uri: string, position: { line: number, character: number }): Promise<any[]> {
+  async getCompletion(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<any[]> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
       throw new Error("LSP server not initialized yet");
     }
 
-    debug(`Getting completions at location: ${uri} (${position.line}:${position.character})`);
+    debug(
+      `Getting completions at location: ${uri} (${position.line}:${position.character})`,
+    );
 
     try {
       const response = await this.sendRequest<any>("textDocument/completion", {
         textDocument: { uri },
-        position
+        position,
       });
 
       if (Array.isArray(response)) {
@@ -559,34 +620,46 @@ export class LSPClient {
         return response.items;
       }
     } catch (error) {
-      warning(`Error getting completions: ${error instanceof Error ? error.message : String(error)}`);
+      warning(
+        `Error getting completions: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     return [];
   }
 
-  async getCodeActions(uri: string, range: { start: { line: number, character: number }, end: { line: number, character: number } }): Promise<any[]> {
+  async getCodeActions(
+    uri: string,
+    range: {
+      start: { line: number; character: number };
+      end: { line: number; character: number };
+    },
+  ): Promise<any[]> {
     // Check if initialized, but don't auto-initialize
     if (!this.initialized) {
       throw new Error("LSP server not initialized yet");
     }
 
-    debug(`Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`);
+    debug(
+      `Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`,
+    );
 
     try {
       const response = await this.sendRequest<any>("textDocument/codeAction", {
         textDocument: { uri },
         range,
         context: {
-          diagnostics: []
-        }
+          diagnostics: [],
+        },
       });
 
       if (Array.isArray(response)) {
         return response;
       }
     } catch (error) {
-      warning(`Error getting code actions: ${error instanceof Error ? error.message : String(error)}`);
+      warning(
+        `Error getting code actions: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     return [];
@@ -596,39 +669,46 @@ export class LSPClient {
   async reopenDocument(uri: string): Promise<void> {
     const filePath = this.filePaths.get(uri);
     const languageId = this.fileLanguageIds.get(uri);
-    
-    debug(`Attempting to reopen document ${uri}: filePath=${filePath}, languageId=${languageId}`);
-    debug(`Current tracking maps - filePaths: ${JSON.stringify(Array.from(this.filePaths.entries()))}, fileLanguageIds: ${JSON.stringify(Array.from(this.fileLanguageIds.entries()))}`);
-    debug(`Currently open documents: ${Array.from(this.openedDocuments).join(', ')}`);
-    
+
+    debug(
+      `Attempting to reopen document ${uri}: filePath=${filePath}, languageId=${languageId}`,
+    );
+    debug(
+      `Current tracking maps - filePaths: ${JSON.stringify(Array.from(this.filePaths.entries()))}, fileLanguageIds: ${JSON.stringify(Array.from(this.fileLanguageIds.entries()))}`,
+    );
+    debug(
+      `Currently open documents: ${Array.from(this.openedDocuments).join(", ")}`,
+    );
+
     if (filePath && languageId) {
       debug(`Reopening document: ${uri}`);
-      
+
       // Close the document first if it's open, but don't remove tracking info
       if (this.isDocumentOpen(uri)) {
         debug(`Document ${uri} is currently open, closing it first`);
         // Send close notification but preserve tracking
         this.sendNotification("textDocument/didClose", {
-          textDocument: { uri }
+          textDocument: { uri },
         });
-        
+
         // Remove from open tracking but preserve file metadata
         this.openedDocuments.delete(uri);
         this.documentVersions.delete(uri);
       } else {
         debug(`Document ${uri} is not currently open`);
       }
-      
+
       // Read the file content from disk and reopen the document
       try {
-        const fs = await import('fs/promises');
+        const fs = await import("fs/promises");
         debug(`Reading file content from: ${filePath}`);
-        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const fileContent = await fs.readFile(filePath, "utf-8");
         debug(`File content length: ${fileContent.length} characters`);
         await this.openDocument(uri, fileContent, languageId);
         debug(`Successfully reopened document: ${uri}`);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         logError(`Error reopening document ${uri}: ${errorMessage}`);
         throw new Error(`Failed to reopen document ${uri}: ${errorMessage}`);
       }
@@ -642,24 +722,23 @@ export class LSPClient {
   // Reopen all previously opened documents to get latest content
   async reopenAllDocuments(): Promise<void> {
     debug(`Reopening all documents (${this.filePaths.size} files)`);
-    
+
     // Capture the URIs to avoid concurrent modification during iteration
     const urisToReopen = Array.from(this.filePaths.keys());
-    
+
     if (urisToReopen.length === 0) {
       debug("No documents to reopen");
       return;
     }
-    
-    const reopenPromises = urisToReopen.map(uri => 
-      this.reopenDocument(uri)
-    );
-    
+
+    const reopenPromises = urisToReopen.map((uri) => this.reopenDocument(uri));
+
     try {
       await Promise.all(reopenPromises);
       debug(`Successfully reopened all ${reopenPromises.length} documents`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logError(`Error reopening documents: ${errorMessage}`);
       throw new Error(`Failed to reopen some documents: ${errorMessage}`);
     }
@@ -678,7 +757,7 @@ export class LSPClient {
       for (const uri of this.openedDocuments) {
         try {
           this.sendNotification("textDocument/didClose", {
-            textDocument: { uri }
+            textDocument: { uri },
           });
         } catch (error) {
           warning(`Error closing document ${uri}:`, error);
@@ -729,7 +808,7 @@ export class LSPClient {
     this.processingQueue = false;
     this.documentDiagnostics.clear();
     this.clearDiagnosticSubscribers();
-    
+
     // Clear file tracking maps
     this.filePaths.clear();
     this.fileLanguageIds.clear();
@@ -740,9 +819,13 @@ export class LSPClient {
     // Initialize with the provided root directory or use the stored one
     if (rootDirectory) {
       await this.initialize(rootDirectory);
-      notice(`LSP server restarted and initialized with root directory: ${rootDirectory}`);
+      notice(
+        `LSP server restarted and initialized with root directory: ${rootDirectory}`,
+      );
     } else {
-      info("LSP server restarted but not initialized. Please initialize the server before use.");
+      info(
+        "LSP server restarted but not initialized. Please initialize the server before use.",
+      );
     }
   }
 }
