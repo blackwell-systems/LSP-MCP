@@ -202,8 +202,9 @@ export const getSubscriptionHandlers = (lspClient: LSPClient | null, server: any
     'lsp-diagnostics://': async (uri: string) => {
       checkLspClientInitialized(lspClient);
 
-      // Extract the file path parameter from the URI
-      const filePath = uri.slice(18);
+      // Extract the file path parameter from the URI using URL parsing
+      const parsedUri = new URL(uri);
+      const filePath = parseUriPath(parsedUri);
 
       if (filePath) {
         // Subscribe to a specific file
@@ -221,11 +222,8 @@ export const getSubscriptionHandlers = (lspClient: LSPClient | null, server: any
           if (diagUri === fileUri) {
             // Send resource update to clients
             server.notification({
-              method: "notifications/resources/update",
-              params: {
-                uri,
-                content: [{ type: "text", text: JSON.stringify({ [diagUri]: diagnostics }, null, 2) }]
-              }
+              method: "notifications/resources/updated",
+              params: { uri },
             });
           }
         };
@@ -262,11 +260,8 @@ export const getSubscriptionHandlers = (lspClient: LSPClient | null, server: any
 
             // Send resource update to clients
             server.notification({
-              method: "notifications/resources/update",
-              params: {
-                uri,
-                content: [{ type: "text", text: JSON.stringify(diagnosticsObject, null, 2) }]
-              }
+              method: "notifications/resources/updated",
+              params: { uri },
             });
           }
         };
