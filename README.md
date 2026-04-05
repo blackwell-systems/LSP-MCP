@@ -1,62 +1,21 @@
-# LSP MCP Server (Improved)
+# lsp-mcp
 
-An MCP (Model Context Protocol) server for interacting with LSP (Language Server Protocol) interface.
-This server acts as a bridge that allows LLMs to query LSP Hover and Completion providers.
+An MCP server that bridges the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/). LLM agents use it to query real language servers for hover information, completions, diagnostics, code actions, and references — without spawning a new server process per request.
 
-**This is an improved fork with enhanced TypeScript support, better MCP compatibility, and optimized performance for large repositories.**
+## Quick Start
 
-## Key Improvements
-
-1. **True Server-Client Architecture**: Enhanced compatibility with large repositories by maintaining a persistent server process, reducing false positives/negatives from re-initializations.
-
-2. **TypeScript Best Practices**: Recommended use of `typescript-language-server` for better support and compatibility compared to VTSLS.
-
-3. **LLM Agent Optimization**: Efficient workflow for LLM agents:
-   - Start the server once per session
-   - Open files that need tracking (required for diagnostics)
-   - Use global diagnostics (without `file_path`) for better accuracy and freshness
-
-## Architecture Benefits
-
-### Persistent Server Process
-
-Unlike many MCP LSP implementations that spawn a new language server process for each request, this server maintains a persistent LSP connection. This approach provides:
-
-- **Reduced Initialization Overhead**: Language servers can take time to parse project files, load configurations, and build internal state
-- **Accurate Diagnostics**: Persistent state allows the language server to maintain up-to-date error/warning information
-- **Better Performance**: Eliminates the startup cost for each request, especially important for large codebases
-- **Consistent State**: File tracking and workspace understanding persists across requests
-
-### TypeScript Integration
-
-For TypeScript projects, this server uses `typescript-language-server` rather than VTSLS (VS Code TypeScript Language Service) because:
-
-- **Reliable LSP Protocol Implementation**: In our testing, `typescript-language-server` consistently sent diagnostic messages through the LSP protocol, while VTSLS failed to provide diagnostics in the MCP context
-- **Better MCP Compatibility**: More predictable behavior when used as a persistent server process
-
-
-## Overview
-
-The MCP Server works by:
-1. Starting an LSP client that connects to a LSP server
-2. Exposing MCP tools that send requests to the LSP server
-3. Returning the results in a format that LLMs can understand and use
-
-This enables LLMs to utilize LSPs for more accurate code suggestions.
-
-
-## Configuration:
+Add to your MCP client configuration:
 
 ```json
 {
   "mcpServers": {
-    "lsp-mcp": {
+    "lsp": {
       "type": "stdio",
       "command": "npx",
       "args": [
-        "tritlo/lsp-mcp",
+        "blackwell-systems/lsp-mcp-improved",
         "<language-id>",
-        "<path-to-lsp>",
+        "<path-to-lsp-binary>",
         "<lsp-args>"
       ]
     }
@@ -64,553 +23,235 @@ This enables LLMs to utilize LSPs for more accurate code suggestions.
 }
 ```
 
+**TypeScript example:**
+```json
+{
+  "mcpServers": {
+    "lsp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["blackwell-systems/lsp-mcp-improved", "typescript", "typescript-language-server", "--stdio"]
+    }
+  }
+}
+```
 
-## Features
+**Haskell example:**
+```json
+{
+  "mcpServers": {
+    "lsp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["blackwell-systems/lsp-mcp-improved", "haskell", "haskell-language-server-wrapper", "lsp"]
+    }
+  }
+}
+```
 
-### MCP Tools
-- `get_info_on_location`: Get hover information at a specific location in a file
-- `get_completions`: Get completion suggestions at a specific location in a file
-- `get_code_actions`: Get code actions for a specific range in a file
-- `open_document`: Open a file in the LSP server for analysis
-- `close_document`: Close a file in the LSP server
-- `get_diagnostics`: Get diagnostic messages (errors, warnings) for open files
-- `start_lsp`: Start the LSP server with a specified root directory
-- `restart_lsp_server`: Restart the LSP server without restarting the MCP server
-- `set_log_level`: Change the server's logging verbosity level at runtime
+## How It Works
 
-### MCP Resources
-- `lsp-diagnostics://` resources for accessing diagnostic messages with real-time updates via subscriptions
-- `lsp-hover://` resources for retrieving hover information at specific file locations
-- `lsp-completions://` resources for getting code completion suggestions at specific positions
-
-### Additional Features
-- Comprehensive logging system with multiple severity levels
-- Colorized console output for better readability
-- Runtime-configurable log level
-- Detailed error handling and reporting
-- Simple command-line interface
+The server starts a persistent LSP connection when the MCP session begins. Tools and resources proxy requests to the running language server, returning results in a format agents can reason about. Persistent state means the language server maintains its workspace index and diagnostic cache across requests — no per-call startup cost.
 
 ## Prerequisites
 
-- Node.js (v16 or later)
-- npm
+- Node.js 18+
+- A language server binary accessible on `PATH` (e.g. `typescript-language-server`, `haskell-language-server-wrapper`, `rust-analyzer`)
 
-For the demo server:
-- GHC (8.10 or later)
-- Cabal (3.0 or later)
+## Tools
 
-## Installation
+All tools require `start_lsp` to be called first.
 
-### Building the MCP Server
+### `start_lsp`
 
-1. Clone this repository:
-   ```
-   git clone https://github.com/your-username/lsp-mcp.git
-   cd lsp-mcp
-   ```
-
-2. Install dependencies:
-   ```
-   npm install
-   ```
-
-3. Build the MCP server:
-   ```
-   npm run build
-   ```
-
-## Testing
-
-The project includes integration tests for the TypeScript LSP support. These tests verify that the LSP-MCP server correctly handles LSP operations like hover information, completions, diagnostics, and code actions.
-
-### Running Tests
-
-To run the TypeScript LSP tests:
-
-```
-npm test
-```
-
-or specifically:
-
-```
-npm run test:typescript
-```
-
-### Test Coverage
-
-The tests verify the following functionality:
-- Initializing the TypeScript LSP with a mock project
-- Opening TypeScript files for analysis
-- Getting hover information for functions and types
-- Getting code completion suggestions
-- Getting diagnostic error messages
-- Getting code actions for errors
-
-The test project is located in `test/ts-project/` and contains TypeScript files with intentional errors to test diagnostic feedback.
-
-## Usage
-
-Run the MCP server by providing the path to the LSP executable and any arguments to pass to the LSP server:
-
-```
-npx tritlo/lsp-mcp <language> /path/to/lsp [lsp-args...]
-```
-
-### Language-Specific Examples
-
-#### TypeScript (Recommended)
-```bash
-npx bfulop/lsp-mcp-improved typescript typescript-language-server --stdio
-```
-
-#### Haskell
-```bash
-npx bfulop/lsp-mcp-improved haskell /usr/bin/haskell-language-server-wrapper lsp
-```
-
-### TypeScript Setup
-
-For optimal TypeScript support:
-
-1. **Install typescript-language-server**:
-   ```bash
-   npm install -g typescript-language-server typescript
-   ```
-
-2. **Use correct language IDs**:
-   - `.ts` files: `typescript`
-   - `.tsx` files: `typescriptreact`
-   - `.js` files: `javascript`
-   - `.jsx` files: `javascriptreact`
-
-3. **Project Structure**: Ensure your project has a `tsconfig.json` at the root for proper configuration loading
-
-### Important: Starting the LSP Server
-
-With version 0.2.0 and later, you must explicitly start the LSP server by calling the `start_lsp` tool before using any LSP functionality. This ensures proper initialization with the correct root directory, which is especially important when using tools like npx:
+Start the language server with a project root. Call this once before using any other tools.
 
 ```json
-{
-  "tool": "start_lsp",
-  "arguments": {
-    "root_dir": "/path/to/your/project"
-  }
-}
+{ "tool": "start_lsp", "arguments": { "root_dir": "/path/to/project" } }
 ```
 
-### Logging
+### `restart_lsp_server`
 
-The server includes a comprehensive logging system with 8 severity levels:
-- `debug`: Detailed information for debugging purposes
-- `info`: General informational messages about system operation
-- `notice`: Significant operational events
-- `warning`: Potential issues that might need attention
-- `error`: Error conditions that affect operation but don't halt the system
-- `critical`: Critical conditions requiring immediate attention
-- `alert`: System is in an unstable state
-- `emergency`: System is unusable
+Restart the language server without restarting the MCP server. Useful when the LSP process becomes unresponsive or after changing project configuration.
 
-By default, logs are sent to:
-1. Console output with color-coding for better readability
-2. MCP notifications to the client (via the `notifications/message` method)
+```json
+{ "tool": "restart_lsp_server", "arguments": {} }
+{ "tool": "restart_lsp_server", "arguments": { "root_dir": "/new/project/root" } }
+```
 
-#### Viewing Debug Logs
+### `open_document`
 
-For detailed debugging, you can:
+Open a file for tracking. Required before fetching diagnostics or performing position-based queries on that file.
 
-1. Use the `claude --mcp-debug` flag when running Claude to see all MCP traffic between Claude and the server:
-   ```
-   claude --mcp-debug
-   ```
+```json
+{ "tool": "open_document", "arguments": { "file_path": "/path/to/file.ts", "language_id": "typescript" } }
+```
 
-2. Change the log level at runtime using the `set_log_level` tool:
-   ```json
-   {
-     "tool": "set_log_level",
-     "arguments": {
-       "level": "debug"
-     }
-   }
-   ```
+### `close_document`
 
-The default log level is `info`, which shows moderate operational detail while filtering out verbose debug messages.
+Stop tracking a file. Frees language server resources for long-running sessions.
 
-## API
+```json
+{ "tool": "close_document", "arguments": { "file_path": "/path/to/file.ts" } }
+```
 
-The server provides the following MCP tools:
+### `get_diagnostics`
 
-### get_info_on_location
+Get errors and warnings for open files. Omit `file_path` to get diagnostics across all open files — this is the recommended approach as it reflects cross-file dependencies and is always fresh.
 
-Gets hover information at a specific location in a file.
+```json
+{ "tool": "get_diagnostics", "arguments": {} }
+{ "tool": "get_diagnostics", "arguments": { "file_path": "/path/to/file.ts" } }
+```
 
-Parameters:
-- `file_path`: Path to the file
-- `language_id`: The programming language the file is written in (e.g., "haskell")
-- `line`: Line number
-- `column`: Column position
+### `get_info_on_location`
 
-Example:
+Get hover information (type signatures, documentation) at a position. Line and column are 1-based.
+
 ```json
 {
   "tool": "get_info_on_location",
-  "arguments": {
-    "file_path": "/path/to/your/file",
-    "language_id": "haskell",
-    "line": 3,
-    "column": 5
-  }
+  "arguments": { "file_path": "/path/to/file.ts", "language_id": "typescript", "line": 10, "column": 5 }
 }
 ```
 
-### get_completions
+### `get_completions`
 
-Gets completion suggestions at a specific location in a file.
+Get completion suggestions at a position.
 
-Parameters:
-- `file_path`: Path to the file
-- `language_id`: The programming language the file is written in (e.g., "haskell")
-- `line`: Line number
-- `column`: Column position
-
-Example:
 ```json
 {
   "tool": "get_completions",
-  "arguments": {
-    "file_path": "/path/to/your/file",
-    "language_id": "haskell",
-    "line": 3,
-    "column": 10
-  }
+  "arguments": { "file_path": "/path/to/file.ts", "language_id": "typescript", "line": 10, "column": 12 }
 }
 ```
 
-### get_code_actions
+### `get_code_actions`
 
-Gets code actions for a specific range in a file.
+Get available code actions (quick fixes, refactors) for a range.
 
-Parameters:
-- `file_path`: Path to the file
-- `language_id`: The programming language the file is written in (e.g., "haskell")
-- `start_line`: Start line number
-- `start_column`: Start column position
-- `end_line`: End line number
-- `end_column`: End column position
-
-Example:
 ```json
 {
   "tool": "get_code_actions",
   "arguments": {
-    "file_path": "/path/to/your/file",
-    "language_id": "haskell",
-    "start_line": 3,
-    "start_column": 5,
-    "end_line": 3,
-    "end_column": 10
+    "file_path": "/path/to/file.ts", "language_id": "typescript",
+    "start_line": 5, "start_column": 1, "end_line": 5, "end_column": 20
   }
 }
 ```
 
-### start_lsp
+### `get_references`
 
-Starts the LSP server with a specified root directory. This must be called before using any other LSP-related tools.
+Find all references to the symbol at a position across the workspace.
 
-Parameters:
-- `root_dir`: The root directory for the LSP server (absolute path recommended)
-
-Example:
 ```json
 {
-  "tool": "start_lsp",
-  "arguments": {
-    "root_dir": "/path/to/your/project"
-  }
+  "tool": "get_references",
+  "arguments": { "file_path": "/path/to/file.ts", "language_id": "typescript", "line": 10, "column": 8 }
 }
 ```
 
-### restart_lsp_server
+### `set_log_level`
 
-Restarts the LSP server process without restarting the MCP server. This is useful for recovering from LSP server issues or for applying changes to the LSP server configuration.
+Control log verbosity at runtime. Default is `info`. Valid levels: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`.
 
-Parameters:
-- `root_dir`: (Optional) The root directory for the LSP server. If provided, the server will be initialized with this directory after restart.
-
-Example without root_dir (uses previously set root directory):
 ```json
-{
-  "tool": "restart_lsp_server",
-  "arguments": {}
-}
+{ "tool": "set_log_level", "arguments": { "level": "debug" } }
 ```
 
-Example with root_dir:
-```json
-{
-  "tool": "restart_lsp_server",
-  "arguments": {
-    "root_dir": "/path/to/your/project"
-  }
-}
+## Resources
+
+Resources provide the same LSP data via a RESTful URI scheme. Use tools for simple queries; use resources when you want subscriptions or a more structured access pattern.
+
+| Scheme | Description |
+|--------|-------------|
+| `lsp-diagnostics://` | Diagnostics for all open files |
+| `lsp-diagnostics:///path/to/file` | Diagnostics for a specific file (supports subscriptions) |
+| `lsp-hover:///path/to/file?line=N&column=N&language_id=X` | Hover information at a position |
+| `lsp-completions:///path/to/file?line=N&column=N&language_id=X` | Completions at a position |
+
+Diagnostic resources support `resources/subscribe` — the server sends `notifications/resources/updated` when diagnostics change.
+
+## Recommended Agent Workflow
+
+```
+1. start_lsp(root_dir="/your/project")
+2. open_document(file_path=..., language_id=...)  # repeat for relevant files
+3. get_diagnostics()                               # no file_path = whole project
+4. get_info_on_location(...) / get_references(...) # as needed
+5. close_document(...)                             # when done with a file
 ```
 
-### open_document
-
-Opens a file in the LSP server for analysis. This must be called before accessing diagnostics or performing other operations on the file.
-
-Parameters:
-- `file_path`: Path to the file to open
-- `language_id`: The programming language the file is written in (e.g., "haskell")
-
-Example:
-```json
-{
-  "tool": "open_document",
-  "arguments": {
-    "file_path": "/path/to/your/file",
-    "language_id": "haskell"
-  }
-}
-```
-
-### close_document
-
-Closes a file in the LSP server when you're done working with it. This helps manage resources and cleanup.
-
-Parameters:
-- `file_path`: Path to the file to close
-
-Example:
-```json
-{
-  "tool": "close_document",
-  "arguments": {
-    "file_path": "/path/to/your/file"
-  }
-}
-```
-
-### get_diagnostics
-
-Gets diagnostic messages (errors, warnings) for one or all open files.
-
-Parameters:
-- `file_path`: (Optional) Path to the file to get diagnostics for. If not provided, returns diagnostics for all open files.
-
-Example for a specific file:
-```json
-{
-  "tool": "get_diagnostics",
-  "arguments": {
-    "file_path": "/path/to/your/file"
-  }
-}
-```
-
-Example for all open files (recommended):
-```json
-{
-  "tool": "get_diagnostics",
-  "arguments": {}
-}
-```
-
-**Note for LLM Agents**: Using `get_diagnostics` without a `file_path` parameter is recommended as it provides more up-to-date results than file-specific queries. The global approach immediately reflects external file changes and is more reliable for detecting compilation errors across the entire project.
-
-### set_log_level
-
-Sets the server's logging level to control verbosity of log messages.
-
-Parameters:
-- `level`: The logging level to set. One of: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`.
-
-Example:
-```json
-{
-  "tool": "set_log_level",
-  "arguments": {
-    "level": "debug"
-  }
-}
-```
-
-## MCP Resources
-
-In addition to tools, the server provides resources for accessing LSP features including diagnostics, hover information, and code completions:
-
-### Diagnostic Resources
-
-The server exposes diagnostic information via the `lsp-diagnostics://` resource scheme. These resources can be subscribed to for real-time updates when diagnostics change.
-
-Resource URIs:
-- `lsp-diagnostics://` - Diagnostics for all open files
-- `lsp-diagnostics:///path/to/file` - Diagnostics for a specific file
-
-Important: Files must be opened using the `open_document` tool before diagnostics can be accessed.
-
-### Hover Information Resources
-
-The server exposes hover information via the `lsp-hover://` resource scheme. This allows you to get information about code elements at specific positions in files.
-
-Resource URI format:
-```
-lsp-hover:///path/to/file?line={line}&column={column}&language_id={language_id}
-```
-
-Parameters:
-- `line`: Line number (1-based)
-- `column`: Column position (1-based)
-- `language_id`: The programming language (e.g., "haskell")
-
-Example:
-```
-lsp-hover:///home/user/project/src/Main.hs?line=42&column=10&language_id=haskell
-```
-
-### Code Completion Resources
-
-The server exposes code completion suggestions via the `lsp-completions://` resource scheme. This allows you to get completion candidates at specific positions in files.
-
-Resource URI format:
-```
-lsp-completions:///path/to/file?line={line}&column={column}&language_id={language_id}
-```
-
-Parameters:
-- `line`: Line number (1-based)
-- `column`: Column position (1-based)
-- `language_id`: The programming language (e.g., "haskell")
-
-Example:
-```
-lsp-completions:///home/user/project/src/Main.hs?line=42&column=10&language_id=haskell
-```
-
-### Listing Available Resources
-
-To discover available resources, use the MCP `resources/list` endpoint. The response will include all available resources for currently open files, including:
-- Diagnostics resources for all open files
-- Hover information templates for all open files
-- Code completion templates for all open files
-
-### Subscribing to Resource Updates
-
-Diagnostic resources support subscriptions to receive real-time updates when diagnostics change (e.g., when files are modified and new errors or warnings appear). Subscribe to diagnostic resources using the MCP `resources/subscribe` endpoint.
-
-Note: Hover and completion resources don't support subscriptions as they represent point-in-time queries.
-
-### Working with Resources vs. Tools
-
-You can choose between two approaches for accessing LSP features:
-
-1. Tool-based approach: Use the `get_diagnostics`, `get_info_on_location`, and `get_completions` tools for a simple, direct way to fetch information.
-2. Resource-based approach: Use the `lsp-diagnostics://`, `lsp-hover://`, and `lsp-completions://` resources for a more RESTful approach.
-
-Both approaches provide the same data in the same format and enforce the same requirement that files must be opened first.
-
-
-## Troubleshooting
-
-- If the server fails to start, make sure the path to the LSP executable is correct
-- Check the log file (if configured) for detailed error messages
-
-## License
-
-MIT License
-
-
+**Language IDs:**
+- `.ts` → `typescript`, `.tsx` → `typescriptreact`
+- `.js` → `javascript`, `.jsx` → `javascriptreact`
+- `.hs` → `haskell`
+- `.rs` → `rust`, `.py` → `python`, `.go` → `go`
 
 ## Extensions
 
-The LSP-MCP server supports language-specific extensions that enhance its capabilities for different programming languages. Extensions can provide:
+Language-specific extensions add specialized tools, prompts, and resource handlers. They are loaded automatically when a matching `language_id` is passed at startup.
 
-- Custom LSP-specific tools and functionality
-- Language-specific resource handlers and templates
-- Specialized prompts for language-related tasks
-- Custom subscription handlers for real-time data
+**Haskell extension** — provides a `haskell.typed-hole-use` prompt for typed-hole exploration.
 
-### Available Extensions
+### Writing an Extension
 
-Currently, the following extensions are available:
+Create `src/extensions/<language-id>.ts` implementing any subset of:
 
-- **Haskell**: Provides specialized prompts for Haskell development, including typed-hole exploration guidance
-
-### Using Extensions
-
-Extensions are loaded automatically when you specify a language ID when starting the server:
-
-```bash
-# Haskell with extension
-npx bfulop/lsp-mcp-improved haskell /path/to/haskell-language-server-wrapper lsp
-
-# TypeScript (uses improved TypeScript integration)
-npx bfulop/lsp-mcp-improved typescript typescript-language-server --stdio
+```typescript
+interface Extension {
+  getToolHandlers?(): Record<string, ToolHandler>;
+  getToolDefinitions?(): Tool[];
+  getResourceHandlers?(): ResourceHandlerMap;
+  getSubscriptionHandlers?(): SubscriptionHandlerMap;
+  getUnsubscriptionHandlers?(): UnsubscriptionHandlerMap;
+  getResourceTemplates?(): ResourceTemplate[];
+  getPromptDefinitions?(): Prompt[];
+  getPromptHandlers?(): Record<string, PromptHandler>;
+}
 ```
 
-### Extension Namespacing
+All extension-provided features are namespaced by language ID (e.g. `haskell.typed-hole-use`).
 
-All extension-provided features are namespaced with the language ID. For example, the Haskell extension's typed-hole prompt is available as `haskell.typed-hole-use`.
+## Development
 
-### Creating New Extensions
+```bash
+git clone https://github.com/blackwell-systems/lsp-mcp-improved.git
+cd lsp-mcp-improved
+npm install
+npm run build
+```
 
-To create a new extension:
+### Testing
 
-1. Create a new TypeScript file in `src/extensions/` named after your language (e.g., `typescript.ts`)
-2. Implement the Extension interface with any of these optional functions:
-   - `getToolHandlers()`: Provide custom tool implementations
-   - `getToolDefinitions()`: Define custom tools in the MCP API
-   - `getResourceHandlers()`: Implement custom resource handlers
-   - `getSubscriptionHandlers()`: Implement custom subscription handlers
-   - `getUnsubscriptionHandlers()`: Implement custom unsubscription handlers
-   - `getResourceTemplates()`: Define custom resource templates
-   - `getPromptDefinitions()`: Define custom prompts for language tasks
-   - `getPromptHandlers()`: Implement custom prompt handlers
+```bash
+npm test              # all test suites
+npm run test:typescript   # TypeScript LSP integration
+npm run test:prompts      # prompt handlers
+npm run test:diagnostics  # waitForDiagnostics unit tests
+npm run test:logging      # logging module unit tests
+npm run test:lsp-helpers  # LSP client helper unit tests
+npm run test:extensions   # extension loader unit tests
+npm run test:tools        # tool utilities unit tests
+npm run test:resources    # resource utilities unit tests
+```
 
-3. Export your implementation functions
+Current coverage: ~76% statements, ~86% functions. The primary uncovered paths are subscription callbacks that require a live LSP session.
 
-The extension system will automatically load your extension when the matching language ID is specified.
+### Debugging
 
-## Best Practices for LLM Agents
+To inspect all MCP traffic:
 
-### Recommended Workflow
+```bash
+claude --mcp-debug
+```
 
-For optimal performance when using this server with LLM agents:
+Or change log verbosity at runtime:
 
-1. **Initialize Once**: Start the LSP server once per session using `start_lsp` with your project root
-2. **Open Files for Tracking**: Use `open_document` for any files you plan to edit or analyze
-3. **Use Global Diagnostics**: Call `get_diagnostics` without `file_path` for the most accurate and up-to-date error reporting
-4. **Leverage Persistent State**: The server maintains file state across requests, eliminating re-initialization overhead
+```json
+{ "tool": "set_log_level", "arguments": { "level": "debug" } }
+```
 
-### Diagnostic Accuracy
+## License
 
-The global diagnostics approach (`get_diagnostics` without file parameters) is more reliable than file-specific queries because:
-
-- It immediately reflects changes made outside the MCP session
-- It provides comprehensive project-wide error detection
-- It avoids stale cache issues that can occur with file-specific requests
-- It captures cross-file dependencies and import errors more effectively
-
-### Performance Considerations
-
-- **Large Repositories**: The persistent server architecture significantly reduces startup overhead for large codebases
-- **TypeScript Projects**: Use `typescript-language-server` for better compatibility and more accurate diagnostics
-- **File Management**: Close files with `close_document` when done to manage memory usage in long-running sessions
-
-### Language-Specific Tips
-
-#### TypeScript/JavaScript
-- Always use correct language IDs: `typescript`, `typescriptreact`, `javascript`, `javascriptreact`
-- Ensure `tsconfig.json` is properly configured and located at project root
-- Install `typescript-language-server` globally for best results
-
-#### Haskell
-- Use the Haskell extension for specialized prompts and typed-hole exploration
-- Ensure `haskell-language-server` is properly installed and accessible
-
-## Acknowledgments
-
-- HLS team for the Language Server Protocol implementation
-- Anthropic for the Model Context Protocol specification
-- Original implementation by tritlo
-- Enhanced TypeScript integration and MCP compatibility improvements
+MIT
