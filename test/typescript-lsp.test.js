@@ -276,7 +276,7 @@ class TypeScriptLspTester {
       // Verify we have the expected tools
       const requiredTools = ['get_info_on_location', 'get_completions', 'get_code_actions',
                            'restart_lsp_server', 'start_lsp', 'open_document',
-                           'close_document', 'get_diagnostics'];
+                           'close_document', 'get_diagnostics', 'get_references'];
 
       const missingTools = requiredTools.filter(tool =>
         !tools.some(t => t.name === tool)
@@ -477,6 +477,27 @@ async function runTests() {
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
         // In a real test, we would verify the content contains actual code actions
+      });
+    });
+
+    // Test get_references — Person is declared in example.ts and used in consumer.ts
+    // Verifies: workspace/configuration response, waitForFileIndexed, cross-file reference resolution
+    await tester.runTest('Get references', async () => {
+      const result = await tester.executeTool('get_references', {
+        file_path: EXAMPLE_TS_FILE,
+        language_id: 'typescript',
+        line: 10,      // export interface Person
+        column: 18,    // 'P' in Person
+        include_declaration: false
+      }, (result) => {
+        assert(result.content && result.content.length > 0, 'Expected content in result');
+        const text = result.content[0].text;
+        const refs = JSON.parse(text);
+        assert(Array.isArray(refs), 'Expected an array of references');
+        assert(refs.length > 0, `Expected at least one reference to Person, got ${refs.length}`);
+        // Must include the cross-file reference in consumer.ts
+        const hasConsumerRef = refs.some(r => r.file && r.file.includes('consumer.ts'));
+        assert(hasConsumerRef, `Expected a reference in consumer.ts, got: ${JSON.stringify(refs)}`);
       });
     });
 
