@@ -14,10 +14,15 @@
     "build": "tsc",
     "prepare": "npm run build",
     "watch": "tsc --watch",
-    "test": "npm run test:typescript && npm run test:prompts && npm run test:diagnostics",
+    "test": "npm run test:typescript && npm run test:prompts && npm run test:diagnostics && npm run test:logging && npm run test:lspClient && npm run test:extensions && npm run test:tools && npm run test:resources",
     "test:typescript": "node test/typescript-lsp.test.js",
     "test:prompts": "node test/prompts.test.js",
-    "test:diagnostics": "node test/waitForDiagnostics.test.js"
+    "test:diagnostics": "node test/waitForDiagnostics.test.js",
+    "test:logging": "node test/logging.test.js",
+    "test:lspClient": "node test/lspClient-helpers.test.js",
+    "test:extensions": "node test/extensions.test.js",
+    "test:tools": "node test/tools-utils.test.js",
+    "test:resources": "node test/resources-utils.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.5.0",
