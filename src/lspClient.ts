@@ -191,8 +191,8 @@ export class LSPClient {
     }
 
     // Store server capabilities from initialize response
-    if ("id" in message && message.result?.capabilities) {
-      this.serverCapabilities = message.result.capabilities;
+    if ("id" in message && message.result && typeof message.result === 'object' && message.result !== null && 'capabilities' in message.result) {
+      this.serverCapabilities = (message.result as any).capabilities;
       notice(
         `LSP Server Capabilities: ${JSON.stringify(this.serverCapabilities, null, 2)}`,
       );
@@ -209,7 +209,7 @@ export class LSPClient {
       ) {
         const { uri, diagnostics } = message.params;
 
-        if (uri && Array.isArray(diagnostics)) {
+        if (typeof uri === 'string' && Array.isArray(diagnostics)) {
           const severity =
             diagnostics.length > 0
               ? Math.min(...diagnostics.map((d) => d.severity || 4))
@@ -241,16 +241,19 @@ export class LSPClient {
       // Handle workspace loading progress (gopls signals readiness via $/progress)
       if (message.method === "$/progress" && message.params) {
         const { token, value } = message.params;
-        if (value?.kind === "begin") {
-          debug(`Progress begin: token=${token} title="${value.title}"`);
-          this.activeProgressTokens.add(token);
-        } else if (value?.kind === "end") {
-          debug(`Progress end: token=${token}`);
-          this.activeProgressTokens.delete(token);
-          if (this.activeProgressTokens.size === 0 && this.workspaceReadyResolvers.length > 0) {
-            info("Workspace loading complete — resolving pending reference waiters");
-            const resolvers = this.workspaceReadyResolvers.splice(0);
-            for (const resolve of resolvers) resolve();
+        if (value && typeof value === 'object' && value !== null && 'kind' in value) {
+          const progressValue = value as any;
+          if (progressValue.kind === "begin") {
+            debug(`Progress begin: token=${token} title="${progressValue.title ?? ''}"`);
+            this.activeProgressTokens.add(token as string | number);
+          } else if (progressValue.kind === "end") {
+            debug(`Progress end: token=${token}`);
+            this.activeProgressTokens.delete(token as string | number);
+            if (this.activeProgressTokens.size === 0 && this.workspaceReadyResolvers.length > 0) {
+              info("Workspace loading complete — resolving pending reference waiters");
+              const resolvers = this.workspaceReadyResolvers.splice(0);
+              for (const resolve of resolvers) resolve();
+            }
           }
         }
       }
@@ -269,7 +272,7 @@ export class LSPClient {
       } else if (message.method === "workspace/configuration") {
         // Return null for each requested config item — gopls uses this to fetch settings.
         // Without a response gopls blocks and workspace loading never completes.
-        const items = message.params?.items ?? [];
+        const items = (message.params && typeof message.params === 'object' && 'items' in message.params && Array.isArray((message.params as any).items)) ? (message.params as any).items : [];
         result = items.map(() => null);
         debug(`Responded to workspace/configuration with ${items.length} null item(s) id=${message.id}`);
       } else if (message.method === "client/registerCapability") {
