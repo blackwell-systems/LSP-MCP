@@ -37,6 +37,10 @@ export class LSPClient {
   private filePaths: Map<string, string> = new Map(); // uri -> originalPath
   private fileLanguageIds: Map<string, string> = new Map(); // uri -> languageId
 
+  // Track gopls workspace loading progress
+  private activeProgressTokens: Set<string | number> = new Set();
+  private workspaceReadyResolvers: Array<() => void> = [];
+
   constructor(lspServerPath: string, lspServerArgs: string[] = []) {
     this.lspServerPath = lspServerPath;
     this.lspServerArgs = lspServerArgs;
@@ -222,6 +226,53 @@ export class LSPClient {
           this.notifyDiagnosticUpdate(uri, diagnostics);
         }
       }
+
+      // Handle workspace loading progress (gopls signals readiness via $/progress)
+      if (message.method === "$/progress" && message.params) {
+        const { token, value } = message.params;
+        if (value?.kind === "begin") {
+          debug(`Progress begin: token=${token} title="${value.title}"`);
+          this.activeProgressTokens.add(token);
+        } else if (value?.kind === "end") {
+          debug(`Progress end: token=${token}`);
+          this.activeProgressTokens.delete(token);
+          if (this.activeProgressTokens.size === 0 && this.workspaceReadyResolvers.length > 0) {
+            info("Workspace loading complete — resolving pending reference waiters");
+            const resolvers = this.workspaceReadyResolvers.splice(0);
+            for (const resolve of resolvers) resolve();
+          }
+        }
+      }
+
+    }
+
+    // Handle server-initiated requests (have id but originate from server, not responses)
+    if ("method" in message && "id" in message) {
+      let result: any = null;
+
+      if (message.method === "window/workDoneProgress/create") {
+        // Acknowledge progress token creation — allows gopls to send $/progress notifications
+        debug(`Acknowledged window/workDoneProgress/create id=${message.id}`);
+        result = null;
+      } else if (message.method === "workspace/configuration") {
+        // Return null for each requested config item — gopls uses this to fetch settings.
+        // Without a response gopls blocks and workspace loading never completes.
+        const items = message.params?.items ?? [];
+        result = items.map(() => null);
+        debug(`Responded to workspace/configuration with ${items.length} null item(s) id=${message.id}`);
+      } else if (message.method === "client/registerCapability") {
+        // Acknowledge dynamic capability registration
+        debug(`Acknowledged client/registerCapability id=${message.id}`);
+        result = null;
+      } else {
+        // Unknown server request — send null to unblock gopls
+        debug(`Unknown server-initiated request: ${message.method} id=${message.id}, responding null`);
+        result = null;
+      }
+
+      const content = JSON.stringify({ jsonrpc: "2.0", id: message.id, result });
+      const header = `Content-Length: ${Buffer.byteLength(content)}\r\n\r\n`;
+      this.process.stdin.write(header + content);
     }
   }
 
@@ -414,6 +465,9 @@ export class LSPClient {
             didChangeWatchedFiles: {
               dynamicRegistration: true,
             },
+          },
+          window: {
+            workDoneProgress: true,
           },
         },
       });
@@ -754,6 +808,56 @@ export class LSPClient {
     }
   }
 
+  // Wait for publishDiagnostics for a URI, then 1.5s of silence.
+  // gopls runs a cross-package background load after the first publishDiagnostics;
+  // the stability window lets that finish so cross-file references are available.
+  async waitForFileIndexed(uri: string, timeoutMs: number = 15000): Promise<void> {
+    const STABLE_DELAY = 1500;
+
+    return new Promise<void>((resolve) => {
+      let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const finish = (reason: string) => {
+        debug(`waitForFileIndexed: ${reason} for ${uri}`);
+        this.unsubscribeFromDiagnostics(listener);
+        clearTimeout(hardTimeout);
+        if (stabilityTimer) clearTimeout(stabilityTimer);
+        resolve();
+      };
+
+      const armStability = () => {
+        if (stabilityTimer) clearTimeout(stabilityTimer);
+        stabilityTimer = setTimeout(() => finish("stable"), STABLE_DELAY);
+      };
+
+      const listener = (notifUri: string, _diagnostics: any[]) => {
+        if (notifUri !== uri) return;
+        armStability();
+      };
+
+      const hardTimeout = setTimeout(() => finish("timed out"), timeoutMs);
+      this.subscribeToDiagnostics(listener);
+
+      // If already cached, arm stability immediately (file was indexed before)
+      if (this.documentDiagnostics.has(uri)) {
+        armStability();
+      }
+    });
+  }
+
+  private async waitForWorkspaceReady(timeoutMs: number = 60000): Promise<void> {
+    if (this.activeProgressTokens.size === 0) return;
+    info(`Waiting for gopls workspace loading (${this.activeProgressTokens.size} active token(s))...`);
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        this.workspaceReadyResolvers.push(resolve);
+      }),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout waiting for workspace loading")), timeoutMs),
+      ),
+    ]);
+  }
+
   async getReferences(
     uri: string,
     position: { line: number; character: number },
@@ -766,6 +870,8 @@ export class LSPClient {
     debug(`Getting references at location: ${uri} (${position.line}:${position.character})`);
 
     try {
+      await this.waitForWorkspaceReady();
+      await this.waitForFileIndexed(uri);
       const response = await this.sendRequest<any>("textDocument/references", {
         textDocument: { uri },
         position,
