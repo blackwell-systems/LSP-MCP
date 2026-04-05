@@ -5,7 +5,6 @@ import { debug, info } from "../logging/index.js";
 // Enum for prompt names
 enum PromptName {
   LSP_GUIDE = "lsp_guide",
-  LANGUAGE_HELP = "language_help",
 }
 
 // Get prompt definitions for the server
