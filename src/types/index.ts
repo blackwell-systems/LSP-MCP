@@ -65,24 +65,24 @@ export type PromptHandler = (args?: Record<string, string>) => Promise<{
 export const GetInfoOnLocationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.number().describe(`Line number`),
-  column: z.number().describe(`Column position`),
+  line: z.coerce.number().describe(`Line number`),
+  column: z.coerce.number().describe(`Column position`),
 });
 
 export const GetCompletionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
-  line: z.number().describe(`Line number`),
-  column: z.number().describe(`Column position`),
+  line: z.coerce.number().describe(`Line number`),
+  column: z.coerce.number().describe(`Column position`),
 });
 
 export const GetCodeActionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
-  start_line: z.number().describe(`Start line number`),
-  start_column: z.number().describe(`Start column position`),
-  end_line: z.number().describe(`End line number`),
-  end_column: z.number().describe(`End column position`),
+  start_line: z.coerce.number().describe(`Start line number`),
+  start_column: z.coerce.number().describe(`Start column position`),
+  end_line: z.coerce.number().describe(`End line number`),
+  end_column: z.coerce.number().describe(`End column position`),
 });
 
 export const OpenDocumentArgsSchema = z.object({
@@ -101,9 +101,13 @@ export const GetDiagnosticsArgsSchema = z.object({
 export const GetReferencesArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.number().describe("Line number of the symbol (1-based)"),
-  column: z.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
   include_declaration: z.boolean().optional().default(false).describe("Include the symbol's own declaration in results"),
+});
+
+export const StartLspArgsSchema = z.object({
+  root_dir: z.string().describe("Absolute path to the project root. gopls will use this as the workspace root for module discovery and cross-file analysis. Call this before get_references or other LSP operations when working in a different project than the server was started with."),
 });
 
 export const SetLogLevelArgsSchema = z.object({

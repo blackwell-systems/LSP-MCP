@@ -400,7 +400,7 @@ async function runServer() {
     
     // Create LSP client instance and immediately initialize it
     lspClient = new LSPClient(lspServerPath, lspServerArgs);
-    await lspClient.initialize('/workspace');
+    await lspClient.initialize(process.cwd());
   }, 100); // Small delay to allow MCP handshake to complete
 }
 

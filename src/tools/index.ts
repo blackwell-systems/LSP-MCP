@@ -7,6 +7,7 @@ import {
   GetCompletionsArgsSchema,
   GetCodeActionsArgsSchema,
   GetReferencesArgsSchema,
+  StartLspArgsSchema,
   OpenDocumentArgsSchema,
   CloseDocumentArgsSchema,
   GetDiagnosticsArgsSchema,
@@ -247,6 +248,26 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
       }
     },
 
+    "start_lsp": {
+      schema: StartLspArgsSchema,
+      handler: async (args: any) => {
+        info(`Starting LSP server with root directory: ${args.root_dir}`);
+        try {
+          const newClient = new LSPClient(lspServerPath, lspServerArgs);
+          await newClient.initialize(args.root_dir);
+          setLspClient(newClient);
+          setRootDir(args.root_dir);
+          return {
+            content: [{ type: "text", text: `LSP server initialized with root: ${args.root_dir}` }],
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logError(`Error starting LSP server: ${errorMessage}`);
+          throw new Error(`Failed to start LSP server: ${errorMessage}`);
+        }
+      }
+    },
+
     "get_references": {
       schema: GetReferencesArgsSchema,
       handler: async (args: any) => {
@@ -329,6 +350,11 @@ export const getToolDefinitions = () => {
       name: "get_diagnostics",
       description: "Get diagnostic messages (errors, warnings) for files. Use this tool to identify problems in code files such as syntax errors, type mismatches, or other issues detected by the language server. When used without a file_path, returns diagnostics for all open files.",
       inputSchema: zodToJsonSchema(GetDiagnosticsArgsSchema) as ToolInput,
+    },
+    {
+      name: "start_lsp",
+      description: "Initialize or reinitialize the LSP server with a specific project root directory. Call this before using get_references, get_info_on_location, or get_diagnostics when working in a project different from the one the server was started with. The root_dir should be the workspace root (directory containing go.work, go.mod, package.json, etc.).",
+      inputSchema: zodToJsonSchema(StartLspArgsSchema) as ToolInput,
     },
     {
       name: "get_references",

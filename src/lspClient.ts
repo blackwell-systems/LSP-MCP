@@ -48,7 +48,7 @@ export class LSPClient {
     info(`Using LSP server arguments: ${this.lspServerArgs.join(" ")}`);
     this.process = spawn(this.lspServerPath, this.lspServerArgs, {
       stdio: ["pipe", "pipe", "pipe"],
-      cwd: "/workspace",
+      cwd: process.cwd(),
     });
 
     // Set up event listeners
