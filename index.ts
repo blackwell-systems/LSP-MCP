@@ -17,7 +17,7 @@ import {
 import * as fsSync from "fs";
 
 import { LSPClient } from "./src/lspClient.js";
-import { debug, info, notice, warning, logError, critical, alert, emergency, setLogLevel, setServer, markServerInitialized } from "./src/logging/index.js";
+import { debug, info, notice, warning, logError, critical, alert, emergency, setLogLevel, setServer, markServerInitialized, initLogging } from "./src/logging/index.js";
 import { getToolHandlers, getToolDefinitions } from "./src/tools/index.js";
 import { getPromptHandlers, getPromptDefinitions } from "./src/prompts/index.js";
 import {
@@ -39,6 +39,9 @@ import {
 } from "./src/extensions/index.js";
 
 import { activateExtension } from "./src/extensions/index.js";
+
+// Install console overrides for logging (must be called before any console usage)
+initLogging();
 
 // Get the language ID from the command line arguments
 const languageId = process.argv[2];
@@ -73,6 +76,9 @@ try {
 // We'll create the LSP client but won't initialize it until start_lsp is called
 let lspClient: LSPClient | null = null;
 let rootDir = "."; // Default to current directory
+
+// Server-side subscription context store, keyed by resource URI
+const subscriptionContexts = new Map<string, any>();
 
 // Set the LSP client function
 const setLspClient = (client: LSPClient) => {
@@ -213,7 +219,11 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
     // Find the appropriate handler for this URI scheme
     const handlerKey = Object.keys(subscriptionHandlers).find(key => uri.startsWith(key));
     if (handlerKey) {
-      return await subscriptionHandlers[handlerKey](uri);
+      const result = await subscriptionHandlers[handlerKey](uri);
+      if (result.ok && result.context) {
+        subscriptionContexts.set(uri, result.context);
+      }
+      return result;
     }
 
     throw new Error(`Unknown resource URI: ${uri}`);
@@ -230,7 +240,9 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
 // Resource unsubscription handler
 server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
   try {
-    const { uri, context } = request.params;
+    const { uri } = request.params;
+    const context = subscriptionContexts.get(uri);
+    subscriptionContexts.delete(uri);
     debug(`Handling UnsubscribeResource request for URI: ${uri}`);
 
     // Get the core and extension unsubscription handlers
@@ -293,13 +305,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 
     return { resources };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling list resources request: ${errorMessage}`);
-    return {
-      resources: [],
-      isError: true,
-      error: errorMessage
-    };
+    logError(`Error handling list resources request:`, error);
+    throw error;
   }
 });
 
@@ -314,13 +321,8 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
       prompts: [...corePrompts, ...extensionPrompts],
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling list prompts request: ${errorMessage}`);
-    return {
-      prompts: [],
-      isError: true,
-      error: errorMessage
-    };
+    logError(`Error handling list prompts request:`, error);
+    throw error;
   }
 });
 
@@ -352,17 +354,25 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
   }
 });
 
-// Clean up on process exit
-process.on('exit', async () => {
-  info("Shutting down MCP server...");
+// Graceful async shutdown on signal
+const gracefulShutdown = async (signal: string): Promise<void> => {
+  info(`Received ${signal}, shutting down MCP server...`);
   try {
-    // Only attempt shutdown if lspClient exists and is initialized
     if (lspClient) {
       await lspClient.shutdown();
     }
   } catch (error) {
-    warning("Error during shutdown:", error);
+    warning(`Error during shutdown on ${signal}:`, error);
   }
+  process.exit(0);
+};
+
+process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
+
+// Synchronous exit handler: no async work here
+process.on('exit', () => {
+  // Intentionally empty — async cleanup is handled by SIGINT/SIGTERM above.
 });
 
 // Log uncaught exceptions
