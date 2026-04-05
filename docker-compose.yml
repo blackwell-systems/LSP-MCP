@@ -1,14 +1,14 @@
-version: '3.8'
-
 services:
   lsp-mcp:
     build: .
     volumes:
-      # Mount any workspace directory - configurable via environment variable
-      - ${WORKSPACE_DIR:-./workspace}:/workspace:ro
+      # Mount your project directory. Read-write is required for code actions
+      # that modify files (e.g. auto-imports, quick fixes).
+      - ${WORKSPACE_DIR:-./workspace}:/workspace:rw
     stdin_open: true
     tty: true
-    # Resource limits to prevent TypeScript language server from consuming too much memory
+    # Resource limits to prevent the language server from consuming too much memory.
+    # Adjust based on project size. These apply with Docker Compose v2+ (non-Swarm).
     deploy:
       resources:
         limits:
@@ -18,6 +18,5 @@ services:
           memory: 1G
           cpus: '0.5'
     environment:
-      # Set environment variables for better TypeScript performance
       - NODE_OPTIONS=--max-old-space-size=3072
       - TSC_NONPOLLING_WATCHER=true

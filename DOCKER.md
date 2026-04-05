@@ -1,73 +1,80 @@
-# Docker Setup for LSP-MCP Server
+# Docker
 
-This directory includes Docker configuration for running the LSP-MCP server in a containerized environment, which provides several benefits:
+Run lsp-mcp in a container with a fixed Node.js version, resource limits, and
+no dependency on your local environment.
 
-- **Stable environment**: Fixed Node.js version, no dependency on local Node version managers
-- **Resource control**: Memory and CPU limits to handle large TypeScript projects
-- **Isolation**: Clean environment without local development setup conflicts
-- **Consistency**: Same environment across different machines and platforms
+## Setup
 
-## Quick Start
-
-1. **Configure your workspace directory:**
+1. Copy the example env file and set your project path:
    ```bash
    cp .env.example .env
-   # Edit .env and set WORKSPACE_DIR to your TypeScript project path
+   # Edit .env: set WORKSPACE_DIR to the absolute path of your project
    ```
 
-2. **Build and run:**
+2. Build and start:
    ```bash
-   docker-compose up --build
+   docker compose up --build
    ```
 
-## Configuration Options
+## MCP Client Configuration
 
-### Environment Variables
-
-- `WORKSPACE_DIR`: Path to your TypeScript project (required)
-
-### MCP Configuration
-
-Update your MCP host configuration to use the Docker container:
+Point your MCP client at the running container:
 
 ```json
 {
-  "lsp-mcp-docker": {
-    "command": "docker",
-    "args": [
-      "compose",
-      "-f", "/path/to/lsp-mcp/docker-compose.yml",
-      "run", "--rm", "lsp-mcp"
-    ],
-    "env": {
-      "WORKSPACE_DIR": "/path/to/your/typescript/project"
-    },
-    "working_directory": "/path/to/lsp-mcp",
-    "start_on_launch": false
+  "mcpServers": {
+    "lsp": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f", "/path/to/lsp-mcp/docker-compose.yml",
+        "run", "--rm", "lsp-mcp"
+      ],
+      "env": {
+        "WORKSPACE_DIR": "/path/to/your/project"
+      },
+      "workingDirectory": "/path/to/lsp-mcp"
+    }
   }
 }
 ```
 
+## Using a Different Language Server
+
+The default image installs `typescript-language-server`. To use a different
+language server, override `CMD` at runtime:
+
+```bash
+# Rust (rust-analyzer must be installed in the container or on PATH)
+docker run --rm -i -v /your/project:/workspace lsp-mcp rust rust-analyzer
+
+# Haskell
+docker run --rm -i -v /your/project:/workspace lsp-mcp haskell haskell-language-server-wrapper lsp
+```
+
+Or extend the Dockerfile to install your language server:
+
+```dockerfile
+FROM ghcr.io/blackwell-systems/lsp-mcp:latest
+USER root
+RUN apk add --no-cache rust-analyzer
+USER lsp
+CMD ["rust", "rust-analyzer"]
+```
+
 ## Resource Limits
 
-The default configuration includes resource limits suitable for large TypeScript projects:
+Defaults (adjust in `docker-compose.yml` for larger projects):
 
-- **Memory**: 4GB limit, 1GB reservation
-- **CPU**: 2 cores limit, 0.5 core reservation
-- **Node.js heap**: 3GB (`--max-old-space-size=3072`)
+| Limit | Default |
+|-------|---------|
+| Memory limit | 4 GB |
+| Memory reservation | 1 GB |
+| CPU limit | 2 cores |
+| CPU reservation | 0.5 cores |
+| Node.js heap | 3 GB (`--max-old-space-size=3072`) |
 
-Adjust these in `docker-compose.yml` based on your project size and system resources.
+## Notes
 
-## Troubleshooting
-
-### Large Projects
-For very large TypeScript projects, you may need to:
-
-1. Increase memory limits in `docker-compose.yml`
-2. Adjust Node.js heap size via `NODE_OPTIONS`
-3. Consider excluding certain directories in your `tsconfig.json`
-
-### Performance
-- The container uses read-only volume mounts for security
-- TypeScript language server performance depends on project size and complexity
-- Consider using TypeScript project references for monorepos
+- The workspace is mounted read-write so code actions (quick fixes, auto-imports) can modify files
+- `TSC_NONPOLLING_WATCHER=true` uses inotify instead of polling for file change detection, which is more efficient in containers

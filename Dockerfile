@@ -1,20 +1,22 @@
-FROM node:24-alpine
+FROM node:20-alpine
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
-# Install TypeScript globally first (needed for build)
-RUN npm install -g typescript typescript-language-server
-
-# Copy source code and configuration
-COPY . .
+# Copy package files first for layer caching — npm install only re-runs when
+# dependencies change, not on every source code change
+COPY package.json package-lock.json ./
 
 # Install all dependencies (including dev dependencies needed for build)
 RUN npm ci
 
-# Build the project
+# Install TypeScript language server globally (default language server)
+RUN npm install -g typescript typescript-language-server
+
+# Copy source and build
+COPY . .
 RUN npm run build
 
 # Remove dev dependencies to reduce image size
@@ -30,8 +32,12 @@ RUN chown -R lsp:lsp /app
 # Switch to non-root user
 USER lsp
 
-# Set working directory to workspace for proper LSP operation
+# Default working directory is the mounted workspace
 WORKDIR /workspace
 
-# Set the entrypoint
-ENTRYPOINT ["node", "/app/dist/index.js", "typescript", "/usr/local/bin/typescript-language-server", "--stdio"]
+# ENTRYPOINT is the binary; CMD provides the default language server (TypeScript).
+# Override CMD to use a different language server:
+#   docker run ... lsp-mcp haskell haskell-language-server-wrapper lsp
+#   docker run ... lsp-mcp rust rust-analyzer
+ENTRYPOINT ["node", "/app/dist/index.js"]
+CMD ["typescript", "typescript-language-server", "--stdio"]
