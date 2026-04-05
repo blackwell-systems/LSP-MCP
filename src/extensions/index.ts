@@ -43,8 +43,11 @@ async function importExtension(languageId: string): Promise<Extension | null> {
     // Normalize language ID to use only alphanumeric characters and hyphens
     const safeLanguageId = languageId.replace(/[^a-zA-Z0-9-]/g, '');
 
+    // Build an absolute path from this module's location so it's cwd-independent
+    const thisDir = path.dirname(new URL(import.meta.url).pathname);
+    const extensionPath = path.join(thisDir, `${safeLanguageId}.js`);
+
     // Check if extension file exists
-    const extensionPath = path.resolve(process.cwd(), 'dist', 'src', 'extensions', `${safeLanguageId}.js`);
     try {
       await fs.access(extensionPath);
     } catch (error) {
@@ -52,8 +55,8 @@ async function importExtension(languageId: string): Promise<Extension | null> {
       return null;
     }
 
-    // Import the extension module
-    const extensionModule = await import(`./${safeLanguageId}.js`);
+    // Import the extension module using the same absolute path
+    const extensionModule = await import(extensionPath);
     return extensionModule as Extension;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
