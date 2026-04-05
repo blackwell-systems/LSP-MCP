@@ -182,6 +182,15 @@ export class LSPClient {
       const promise = this.responsePromises.get(message.id!);
       if (promise) {
         if (message.error) {
+          const err = message.error as any;
+          // Log known LSP error codes at appropriate levels (§3.6)
+          if (err?.code === -32601) {
+            warning(`LSP method not supported by server (MethodNotFound): ${JSON.stringify(err)}`);
+          } else if (err?.code === -32002) {
+            warning(`LSP server not yet initialized (ServerNotInitialized): ${JSON.stringify(err)}`);
+          } else {
+            debug(`LSP error response: ${JSON.stringify(err)}`);
+          }
           promise.reject(message.error);
         } else {
           promise.resolve(message.result);
@@ -246,6 +255,8 @@ export class LSPClient {
           if (progressValue.kind === "begin") {
             debug(`Progress begin: token=${token} title="${progressValue.title ?? ''}"`);
             this.activeProgressTokens.add(token as string | number);
+          } else if (progressValue.kind === "report") {
+            debug(`Progress report: token=${token} message="${progressValue.message ?? ''}" percentage=${progressValue.percentage ?? ''}`);
           } else if (progressValue.kind === "end") {
             debug(`Progress end: token=${token}`);
             this.activeProgressTokens.delete(token as string | number);
@@ -266,8 +277,14 @@ export class LSPClient {
       let result: any = null;
 
       if (message.method === "window/workDoneProgress/create") {
-        // Acknowledge progress token creation — allows gopls to send $/progress notifications
-        debug(`Acknowledged window/workDoneProgress/create id=${message.id}`);
+        // Pre-register the progress token so $/progress begin/end handlers recognize it (§3.18)
+        const token = (message.params as any)?.token;
+        if (token !== undefined) {
+          this.activeProgressTokens.add(token);
+          debug(`Pre-registered progress token=${token} id=${message.id}`);
+        } else {
+          debug(`Acknowledged window/workDoneProgress/create id=${message.id}`);
+        }
         result = null;
       } else if (message.method === "workspace/configuration") {
         // Return null for each requested config item — gopls uses this to fetch settings.
@@ -455,6 +472,10 @@ export class LSPClient {
                 snippetSupport: false,
               },
             },
+            references: {},
+            definition: {},
+            implementation: {},
+            typeDefinition: {},
             codeAction: {
               dynamicRegistration: true,
             },
@@ -667,6 +688,11 @@ export class LSPClient {
       `Getting info on location: ${uri} (${position.line}:${position.character})`,
     );
 
+    if (!this.serverCapabilities?.hoverProvider) {
+      debug("Server does not declare hoverProvider capability — skipping hover request");
+      return "";
+    }
+
     try {
       // Use hover request to get information at the position
       const response = await this.sendRequest<any>("textDocument/hover", {
@@ -676,15 +702,21 @@ export class LSPClient {
 
       if (response?.contents) {
         if (typeof response.contents === "string") {
+          // Deprecated MarkedString plain string form
           return response.contents;
-        } else if (response.contents.value) {
-          return response.contents.value;
         } else if (Array.isArray(response.contents)) {
+          // Deprecated MarkedString[] form
           return response.contents
             .map((item: any) =>
               typeof item === "string" ? item : item.value || "",
             )
             .join("\n");
+        } else if (response.contents.kind === "markdown" || response.contents.kind === "plaintext") {
+          // MarkupContent form (§3.15.11) — kind distinguishes rendering intent
+          return response.contents.value || "";
+        } else if (response.contents.value) {
+          // Deprecated MarkedString object form { language, value }
+          return response.contents.value;
         }
       }
     } catch (err) {
@@ -708,6 +740,11 @@ export class LSPClient {
     debug(
       `Getting completions at location: ${uri} (${position.line}:${position.character})`,
     );
+
+    if (!this.serverCapabilities?.completionProvider) {
+      debug("Server does not declare completionProvider capability — skipping completion request");
+      return [];
+    }
 
     try {
       const response = await this.sendRequest<any>("textDocument/completion", {
@@ -744,6 +781,11 @@ export class LSPClient {
     debug(
       `Getting code actions for range: ${uri} (${range.start.line}:${range.start.character} to ${range.end.line}:${range.end.character})`,
     );
+
+    if (!this.serverCapabilities?.codeActionProvider) {
+      debug("Server does not declare codeActionProvider capability — skipping code action request");
+      return [];
+    }
 
     try {
       const response = await this.sendRequest<any>("textDocument/codeAction", {
@@ -904,6 +946,11 @@ export class LSPClient {
     }
 
     debug(`Getting references at location: ${uri} (${position.line}:${position.character})`);
+
+    if (!this.serverCapabilities?.referencesProvider) {
+      debug("Server does not declare referencesProvider capability — skipping references request");
+      return [];
+    }
 
     try {
       await this.waitForWorkspaceReady();
