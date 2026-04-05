@@ -136,7 +136,7 @@ export const debug = (...args: any[]): void => log("debug", ...args);
 export const info = (...args: any[]): void => log("info", ...args);
 export const notice = (...args: any[]): void => log("notice", ...args);
 export const warning = (...args: any[]): void => log("warning", ...args);
-export const logError = (...args: any[]): void => log("error", ...args);
+export const error = (...args: any[]): void => log("error", ...args);
 export const critical = (...args: any[]): void => log("critical", ...args);
 export const alert = (...args: any[]): void => log("alert", ...args);
 export const emergency = (...args: any[]): void => log("emergency", ...args);
@@ -190,7 +190,7 @@ export function initLogging(): void {
       return;
     }
     isLogging = true;
-    logError(...args);
+    error(...args);
     isLogging = false;
   };
 }

@@ -17,7 +17,7 @@ import {
 import * as fsSync from "fs";
 
 import { LSPClient } from "./src/lspClient.js";
-import { debug, info, notice, warning, logError, critical, alert, emergency, setLogLevel, setServer, markServerInitialized, initLogging } from "./src/logging/index.js";
+import { debug, info, notice, warning, error, critical, alert, emergency, setLogLevel, setServer, markServerInitialized, initLogging } from "./src/logging/index.js";
 import { getToolHandlers, getToolDefinitions } from "./src/tools/index.js";
 import { getPromptHandlers, getPromptDefinitions } from "./src/prompts/index.js";
 import {
@@ -67,9 +67,9 @@ try {
     console.error(`Error: The specified path '${lspServerPath}' is not a file`);
     process.exit(1);
   }
-} catch (error) {
+} catch (err) {
   console.error(`Error: Could not access the LSP server at '${lspServerPath}'`);
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 }
 
@@ -163,9 +163,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Call the handler with the validated arguments
     return await toolHandler.handler(parsed.data);
 
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling tool request: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error handling tool request: ${errorMessage}`);
     return {
       content: [{ type: "text", text: `Error: ${errorMessage}` }],
       isError: true,
@@ -193,9 +193,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     }
 
     throw new Error(`Unknown resource URI: ${uri}`);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling resource request: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error handling resource request: ${errorMessage}`);
     return {
       contents: [{ type: "text", text: `Error: ${errorMessage}`, uri: request.params.uri }],
       isError: true,
@@ -227,9 +227,9 @@ server.setRequestHandler(SubscribeRequestSchema, async (request) => {
     }
 
     throw new Error(`Unknown resource URI: ${uri}`);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling subscription request: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error handling subscription request: ${errorMessage}`);
     return {
       ok: false,
       error: errorMessage
@@ -259,9 +259,9 @@ server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
     }
 
     throw new Error(`Unknown resource URI: ${uri}`);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling unsubscription request: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error handling unsubscription request: ${errorMessage}`);
     return {
       ok: false,
       error: errorMessage
@@ -279,9 +279,9 @@ server.setRequestHandler(SetLevelRequestSchema, async (request) => {
     setLogLevel(level);
 
     return {};
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling set level request: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error handling set level request: ${errorMessage}`);
     return {
       ok: false,
       error: errorMessage
@@ -304,9 +304,9 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
     const resources = [...coreResources, ...extensionTemplates];
 
     return { resources };
-  } catch (error) {
-    logError(`Error handling list resources request:`, error);
-    throw error;
+  } catch (err) {
+    error(`Error handling list resources request:`, err);
+    throw err;
   }
 });
 
@@ -320,9 +320,9 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
     return {
       prompts: [...corePrompts, ...extensionPrompts],
     };
-  } catch (error) {
-    logError(`Error handling list prompts request:`, error);
-    throw error;
+  } catch (err) {
+    error(`Error handling list prompts request:`, err);
+    throw err;
   }
 });
 
@@ -347,9 +347,9 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 
     // Call the handler with the arguments
     return await promptHandler(args);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error handling get prompt request: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error handling get prompt request: ${errorMessage}`);
     throw new Error(`Error handling get prompt request: ${errorMessage}`);
   }
 });
@@ -361,8 +361,8 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     if (lspClient) {
       await lspClient.shutdown();
     }
-  } catch (error) {
-    warning(`Error during shutdown on ${signal}:`, error);
+  } catch (err) {
+    warning(`Error during shutdown on ${signal}:`, err);
   }
   process.exit(0);
 };
@@ -415,7 +415,7 @@ async function runServer() {
 }
 
 
-runServer().catch((error) => {
-  emergency("Fatal error running server:", error);
+runServer().catch((err) => {
+  emergency("Fatal error running server:", err);
   process.exit(1);
 });

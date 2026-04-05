@@ -12,7 +12,7 @@ import {
   notice,
   warning,
   log,
-  logError,
+  error,
 } from "./logging/index.js";
 
 export class LSPClient {
@@ -74,7 +74,7 @@ export class LSPClient {
     // Implement a safety limit to prevent excessive buffer growth
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
     if (this.buffer.length > MAX_BUFFER_SIZE) {
-      logError(
+      error(
         `Buffer size exceeded ${MAX_BUFFER_SIZE} bytes, discarding entire buffer to prevent mid-message parse`,
       );
       this.buffer = "";
@@ -91,7 +91,7 @@ export class LSPClient {
 
       // Prevent processing unreasonably large messages
       if (contentLength > MAX_BUFFER_SIZE) {
-        logError(
+        error(
           `Received message with content length ${contentLength} exceeds maximum size, skipping`,
         );
         this.buffer = this.buffer.substring(headerEnd + contentLength);
@@ -131,10 +131,10 @@ export class LSPClient {
         const message = JSON.parse(content) as LSPMessage;
         this.messageQueue.push(message);
         this.processMessageQueue().catch((err) =>
-          logError("Unhandled error in processMessageQueue:", err)
+          error("Unhandled error in processMessageQueue:", err)
         );
-      } catch (error) {
-        logError("Failed to parse LSP message:", error);
+      } catch (err) {
+        error("Failed to parse LSP message:", err);
       }
     }
   }
@@ -164,8 +164,8 @@ export class LSPClient {
       const method = message.method || "";
       const logLevel = this.getLSPMethodLogLevel(method);
       log(logLevel, `LSP ${direction} (${method}): ${messageStr}`);
-    } catch (error) {
-      warning("Error logging LSP message:", error);
+    } catch (err) {
+      warning("Error logging LSP message:", err);
     }
 
     this.handleServerResponse(message);
@@ -346,8 +346,8 @@ export class LSPClient {
       const requestStr = JSON.stringify(request, null, 2);
       const logLevel = this.getLSPMethodLogLevel(method);
       log(logLevel as any, `LSP ${direction} (${method}): ${requestStr}`);
-    } catch (error) {
-      warning("Error logging LSP request:", error);
+    } catch (err) {
+      warning("Error logging LSP request:", err);
     }
 
     const promise = new Promise<T>((resolve, reject) => {
@@ -402,8 +402,8 @@ export class LSPClient {
       const notificationStr = JSON.stringify(notification, null, 2);
       const logLevel = this.getLSPMethodLogLevel(method);
       log(logLevel as any, `LSP ${direction} (${method}): ${notificationStr}`);
-    } catch (error) {
-      warning("Error logging LSP notification:", error);
+    } catch (err) {
+      warning("Error logging LSP notification:", err);
     }
 
     const content = JSON.stringify(notification);
@@ -489,8 +489,8 @@ export class LSPClient {
       this.sendNotification("initialized", {});
       this.initialized = true;
       notice("LSP connection initialized successfully");
-    } catch (error) {
-      logError("Failed to initialize LSP connection:", error);
+    } catch (err) {
+      error("Failed to initialize LSP connection:", err);
       throw error;
     }
   }
@@ -620,8 +620,8 @@ export class LSPClient {
     this.diagnosticSubscribers.forEach((callback) => {
       try {
         callback(uri, diagnostics);
-      } catch (error) {
-        warning("Error in diagnostic subscriber callback:", error);
+      } catch (err) {
+        warning("Error in diagnostic subscriber callback:", err);
       }
     });
   }
@@ -687,9 +687,9 @@ export class LSPClient {
             .join("\n");
         }
       }
-    } catch (error) {
+    } catch (err) {
       warning(
-        `Error getting hover information: ${error instanceof Error ? error.message : String(error)}`,
+        `Error getting hover information: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
@@ -720,9 +720,9 @@ export class LSPClient {
       } else if (response?.items && Array.isArray(response.items)) {
         return response.items;
       }
-    } catch (error) {
+    } catch (err) {
       warning(
-        `Error getting completions: ${error instanceof Error ? error.message : String(error)}`,
+        `Error getting completions: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
@@ -757,9 +757,9 @@ export class LSPClient {
       if (Array.isArray(response)) {
         return response;
       }
-    } catch (error) {
+    } catch (err) {
       warning(
-        `Error getting code actions: ${error instanceof Error ? error.message : String(error)}`,
+        `Error getting code actions: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
@@ -806,15 +806,15 @@ export class LSPClient {
         debug(`File content length: ${fileContent.length} characters`);
         await this.openDocument(uri, fileContent, languageId);
         debug(`Successfully reopened document: ${uri}`);
-      } catch (error) {
+      } catch (err) {
         const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        logError(`Error reopening document ${uri}: ${errorMessage}`);
+          err instanceof Error ? err.message : String(err);
+        error(`Error reopening document ${uri}: ${errorMessage}`);
         throw new Error(`Failed to reopen document ${uri}: ${errorMessage}`);
       }
     } else {
       const errorMsg = `Cannot reopen document ${uri}: missing file path (${filePath}) or language ID (${languageId}) metadata`;
-      logError(errorMsg);
+      error(errorMsg);
       throw new Error(errorMsg);
     }
   }
@@ -836,10 +836,10 @@ export class LSPClient {
     try {
       await Promise.all(reopenPromises);
       debug(`Successfully reopened all ${reopenPromises.length} documents`);
-    } catch (error) {
+    } catch (err) {
       const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      logError(`Error reopening documents: ${errorMessage}`);
+        err instanceof Error ? err.message : String(err);
+      error(`Error reopening documents: ${errorMessage}`);
       throw new Error(`Failed to reopen some documents: ${errorMessage}`);
     }
   }
@@ -917,8 +917,8 @@ export class LSPClient {
       if (Array.isArray(response)) {
         return response;
       }
-    } catch (error) {
-      warning(`Error getting references: ${error instanceof Error ? error.message : String(error)}`);
+    } catch (err) {
+      warning(`Error getting references: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     return [];
@@ -939,8 +939,8 @@ export class LSPClient {
           this.sendNotification("textDocument/didClose", {
             textDocument: { uri },
           });
-        } catch (error) {
-          warning(`Error closing document ${uri}:`, error);
+        } catch (err) {
+          warning(`Error closing document ${uri}:`, err);
         }
       }
 
@@ -949,8 +949,8 @@ export class LSPClient {
       this.initialized = false;
       this.openedDocuments.clear();
       notice("LSP connection shut down successfully");
-    } catch (error) {
-      logError("Error shutting down LSP connection:", error);
+    } catch (err) {
+      error("Error shutting down LSP connection:", err);
     }
   }
 
@@ -961,8 +961,8 @@ export class LSPClient {
     if (this.initialized) {
       try {
         await this.shutdown();
-      } catch (error) {
-        warning("Error shutting down LSP server during restart:", error);
+      } catch (err) {
+        warning("Error shutting down LSP server during restart:", err);
       }
     }
 
@@ -971,8 +971,8 @@ export class LSPClient {
       try {
         this.process.kill();
         notice("Killed existing LSP process");
-      } catch (error) {
-        logError("Error killing LSP process:", error);
+      } catch (err) {
+        error("Error killing LSP process:", err);
       }
     }
 
