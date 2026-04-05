@@ -156,39 +156,41 @@ export const setLogLevel = (level: LoggingLevel): void => {
   log("notice", `Log level set to: ${level}`);
 };
 
-// Override console methods to use our logging system
-console.log = function (...args) {
-  if (isLogging) {
-    // Use original method to prevent recursion
-    originalConsoleLog(...args);
-    return;
-  }
+// Guard to ensure console overrides are only installed once
+let consoleOverrideInstalled = false;
 
-  isLogging = true;
-  info(...args);
-  isLogging = false;
-};
+// Initialize logging by overriding console methods
+export function initLogging(): void {
+  if (consoleOverrideInstalled) return;
+  consoleOverrideInstalled = true;
 
-console.warn = function (...args) {
-  if (isLogging) {
-    // Use original method to prevent recursion
-    originalConsoleWarn(...args);
-    return;
-  }
+  console.log = function (...args: any[]) {
+    if (isLogging) {
+      originalConsoleLog(...args);
+      return;
+    }
+    isLogging = true;
+    info(...args);
+    isLogging = false;
+  };
 
-  isLogging = true;
-  warning(...args);
-  isLogging = false;
-};
+  console.warn = function (...args: any[]) {
+    if (isLogging) {
+      originalConsoleWarn(...args);
+      return;
+    }
+    isLogging = true;
+    warning(...args);
+    isLogging = false;
+  };
 
-console.error = function (...args) {
-  if (isLogging) {
-    // Use original method to prevent recursion
-    originalConsoleError(...args);
-    return;
-  }
-
-  isLogging = true;
-  logError(...args);
-  isLogging = false;
-};
+  console.error = function (...args: any[]) {
+    if (isLogging) {
+      originalConsoleError(...args);
+      return;
+    }
+    isLogging = true;
+    logError(...args);
+    isLogging = false;
+  };
+}
