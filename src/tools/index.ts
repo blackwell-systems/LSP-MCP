@@ -16,7 +16,7 @@ import {
   ToolHandler
 } from "../types/index.js";
 import { LSPClient } from "../lspClient.js";
-import { debug, info, logError, notice, warning, setLogLevel } from "../logging/index.js";
+import { debug, info, error, notice, warning, setLogLevel } from "../logging/index.js";
 import { activateExtension } from "../extensions/index.js";
 import { waitForDiagnostics } from "../shared/waitForDiagnostics.js";
 
@@ -111,9 +111,9 @@ async function handleOpenDocument(
     const fileUri = createFileUri(args.file_path);
     await lspClient!.openDocument(fileUri, fileContent, args.language_id);
     return { content: [{ type: "text", text: `File successfully opened: ${args.file_path}` }] };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error opening document: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error opening document: ${errorMessage}`);
     throw new Error(`Failed to open document: ${errorMessage}`);
   }
 }
@@ -129,9 +129,9 @@ async function handleCloseDocument(
     const fileUri = createFileUri(args.file_path);
     await lspClient!.closeDocument(fileUri);
     return { content: [{ type: "text", text: `File successfully closed: ${args.file_path}` }] };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error closing document: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error closing document: ${errorMessage}`);
     throw new Error(`Failed to close document: ${errorMessage}`);
   }
 }
@@ -174,9 +174,9 @@ async function handleGetDiagnostics(
         }],
       };
     }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error getting diagnostics: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error getting diagnostics: ${errorMessage}`);
     throw new Error(`Failed to get diagnostics: ${errorMessage}`);
   }
 }
@@ -209,9 +209,9 @@ async function handleStartLsp(
     return {
       content: [{ type: "text", text: `LSP server initialized with root: ${args.root_dir}` }],
     };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error starting LSP server: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error starting LSP server: ${errorMessage}`);
     throw new Error(`Failed to start LSP server: ${errorMessage}`);
   }
 }

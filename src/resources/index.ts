@@ -3,7 +3,7 @@ import * as path from "path";
 import { DiagnosticUpdateCallback, ResourceHandler, SubscriptionContext, SubscriptionHandler, UnsubscriptionHandler } from "../types/index.js";
 import { LSPClient } from "../lspClient.js";
 import { createFileUri, checkLspClientInitialized } from "../tools/index.js";
-import { debug, logError } from "../logging/index.js";
+import { debug, error } from "../logging/index.js";
 import { waitForDiagnostics } from "../shared/waitForDiagnostics.js";
 
 // Helper function to parse a URI path
@@ -108,9 +108,9 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
         return {
           contents: [{ type: "text", text: diagnosticsContent, uri }],
         };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logError(`Error parsing diagnostics URI or getting diagnostics: ${errorMessage}`);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        error(`Error parsing diagnostics URI or getting diagnostics: ${errorMessage}`);
         throw new Error(`Error processing diagnostics request: ${errorMessage}`);
       }
     },
@@ -147,9 +147,9 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
         return {
           contents: [{ type: "text", text: hoverText, uri }],
         };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logError(`Error parsing hover URI or getting hover information: ${errorMessage}`);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        error(`Error parsing hover URI or getting hover information: ${errorMessage}`);
         throw new Error(`Error processing hover request: ${errorMessage}`);
       }
     },
@@ -186,9 +186,9 @@ export const getResourceHandlers = (lspClient: LSPClient | null): Record<string,
         return {
           contents: [{ type: "text", text: JSON.stringify(completions, null, 2), uri }],
         };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logError(`Error parsing completions URI or getting completions: ${errorMessage}`);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        error(`Error parsing completions URI or getting completions: ${errorMessage}`);
         throw new Error(`Error processing completions request: ${errorMessage}`);
       }
     }

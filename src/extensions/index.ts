@@ -1,7 +1,7 @@
 // Extensions management system for LSP-MCP
 import * as fs from "fs/promises";
 import * as path from "path";
-import { debug, info, warning, logError } from "../logging/index.js";
+import { debug, info, warning, error } from "../logging/index.js";
 import {
   ToolHandler,
   ResourceHandler,
@@ -50,7 +50,7 @@ async function importExtension(languageId: string): Promise<Extension | null> {
     // Check if extension file exists
     try {
       await fs.access(extensionPath);
-    } catch (error) {
+    } catch (err) {
       info(`No extension found for language: ${languageId}`);
       return null;
     }
@@ -58,9 +58,9 @@ async function importExtension(languageId: string): Promise<Extension | null> {
     // Import the extension module using the same absolute path
     const extensionModule = await import(extensionPath);
     return extensionModule as Extension;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error importing extension for ${languageId}: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error importing extension for ${languageId}: ${errorMessage}`);
     return null;
   }
 }
@@ -85,9 +85,9 @@ export async function activateExtension(languageId: string): Promise<{success: b
     activeExtensions[languageId] = extension;
     info(`Activated extension for language: ${languageId}`);
     return { success: true };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error activating extension for ${languageId}: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error activating extension for ${languageId}: ${errorMessage}`);
     return { success: false };
   }
 }
@@ -106,9 +106,9 @@ export function deactivateExtension(languageId: string): {success: boolean} {
     info(`Deactivated extension for language: ${languageId}`);
 
     return { success: true };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError(`Error deactivating extension for ${languageId}: ${errorMessage}`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    error(`Error deactivating extension for ${languageId}: ${errorMessage}`);
     return { success: false };
   }
 }
