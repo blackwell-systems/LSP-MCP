@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `initLogging()` function for explicit console override initialization (improves test isolation)
 - Type-safe interfaces for LSP diagnostics (`LSPDiagnostic`)
 - Diagnostic filtering for `getCodeActions` - now passes overlapping diagnostics per LSP 3.17 spec §3.16.8
+- Client capability declarations for `references`, `definition`, `implementation`, `typeDefinition` per LSP 3.17 §3.15.2
+- Server capability checks before sending `hover`, `completion`, `codeAction`, `references` requests per LSP 3.17 §3.15.3
+- `$/progress` "report" kind handling for intermediate progress notifications per LSP 3.17 §3.18
+- Progress token pre-registration when handling `window/workDoneProgress/create` per LSP 3.17 §3.18
 
 ### Changed
 - **BREAKING:** Renamed `logError` to `error` for consistency with other log level helpers (debug, info, warning, etc.)
@@ -24,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced dynamic `fs/promises` import with static import in `lspClient.ts`
 - Extension path resolution now uses `import.meta.url` instead of `process.cwd()` for consistency
 - Buffer overflow handling now discards entire buffer instead of keeping potentially corrupt tail bytes
+- Hover response parsing now correctly checks `MarkupContent.kind` (`"markdown"` | `"plaintext"`) before falling back to deprecated `MarkedString` forms per LSP 3.17 §3.15.11
+- LSP error code `-32601` (MethodNotFound) and `-32002` (ServerNotInitialized) now logged as warnings; other error codes logged at debug level per LSP 3.17 §3.6
 
 ### Fixed
 - **Critical:** MCP resource subscription notifications now use correct method name `notifications/resources/updated` (was `notifications/resources/update`)
