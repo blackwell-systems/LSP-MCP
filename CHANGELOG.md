@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `restart_lsp_server` tool - restart the LSP server process without restarting the MCP server
 - Unit test suite for `waitForDiagnostics` function with coverage for timing, snapshot exclusion, and timeout behaviors
+- Unit tests for core modules: logging, LSP client helpers, extensions, tools utilities, resource utilities (50 new tests across 5 files)
+- Code coverage reporting via `c8` (76% statement coverage, 86% function coverage)
 - `initLogging()` function for explicit console override initialization (improves test isolation)
 - Type-safe interfaces for LSP diagnostics (`LSPDiagnostic`)
 - Diagnostic filtering for `getCodeActions` - now passes overlapping diagnostics per LSP 3.17 spec §3.16.8
