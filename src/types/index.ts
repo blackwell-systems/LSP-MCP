@@ -98,6 +98,14 @@ export const GetDiagnosticsArgsSchema = z.object({
   file_path: z.string().optional().describe(`Path to the file to get diagnostics for. If not provided, returns diagnostics for all open files.`),
 });
 
+export const GetReferencesArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file containing the symbol"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.number().describe("Line number of the symbol (1-based)"),
+  column: z.number().describe("Column position of the symbol (1-based)"),
+  include_declaration: z.boolean().optional().default(false).describe("Include the symbol's own declaration in results"),
+});
+
 export const SetLogLevelArgsSchema = z.object({
   level: z.enum(['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'])
     .describe("The logging level to set")

@@ -6,6 +6,7 @@ import {
   GetInfoOnLocationArgsSchema,
   GetCompletionsArgsSchema,
   GetCodeActionsArgsSchema,
+  GetReferencesArgsSchema,
   OpenDocumentArgsSchema,
   CloseDocumentArgsSchema,
   GetDiagnosticsArgsSchema,
@@ -246,6 +247,41 @@ export const getToolHandlers = (lspClient: LSPClient | null, lspServerPath: stri
       }
     },
 
+    "get_references": {
+      schema: GetReferencesArgsSchema,
+      handler: async (args: any) => {
+        debug(`Getting references in file: ${args.file_path} (${args.line}:${args.column})`);
+
+        checkLspClientInitialized(lspClient);
+
+        const fileContent = await fs.readFile(args.file_path, 'utf-8');
+        const fileUri = createFileUri(args.file_path);
+
+        await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+
+        const refs = await lspClient!.getReferences(
+          fileUri,
+          { line: args.line - 1, character: args.column - 1 },
+          args.include_declaration ?? false,
+        );
+
+        // Convert LSP Location objects to human-readable format (1-based lines, file paths)
+        const formatted = refs.map((loc: any) => ({
+          file: loc.uri.replace(/^file:\/\//, ""),
+          line: loc.range.start.line + 1,
+          column: loc.range.start.character + 1,
+          end_line: loc.range.end.line + 1,
+          end_column: loc.range.end.character + 1,
+        }));
+
+        debug(`Found ${formatted.length} references`);
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }],
+        };
+      }
+    },
+
     "set_log_level": {
       schema: SetLogLevelArgsSchema,
       handler: async (args: any) => {
@@ -293,6 +329,11 @@ export const getToolDefinitions = () => {
       name: "get_diagnostics",
       description: "Get diagnostic messages (errors, warnings) for files. Use this tool to identify problems in code files such as syntax errors, type mismatches, or other issues detected by the language server. When used without a file_path, returns diagnostics for all open files.",
       inputSchema: zodToJsonSchema(GetDiagnosticsArgsSchema) as ToolInput,
+    },
+    {
+      name: "get_references",
+      description: "Find all references to a symbol at a specific location in a file via LSP. Returns every location in the codebase where the symbol is used. Use this to determine if a symbol is dead (zero references), to understand call sites before refactoring, or to trace data flow. Results include file path and line/column for each reference.",
+      inputSchema: zodToJsonSchema(GetReferencesArgsSchema) as ToolInput,
     },
     {
       name: "set_log_level",

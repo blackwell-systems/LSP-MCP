@@ -744,6 +744,34 @@ export class LSPClient {
     }
   }
 
+  async getReferences(
+    uri: string,
+    position: { line: number; character: number },
+    includeDeclaration: boolean = false,
+  ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting references at location: ${uri} (${position.line}:${position.character})`);
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/references", {
+        textDocument: { uri },
+        position,
+        context: { includeDeclaration },
+      });
+
+      if (Array.isArray(response)) {
+        return response;
+      }
+    } catch (error) {
+      warning(`Error getting references: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return [];
+  }
+
   async shutdown(): Promise<void> {
     if (!this.initialized) return;
 
