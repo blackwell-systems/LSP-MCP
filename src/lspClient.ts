@@ -251,6 +251,15 @@ export class LSPClient {
     return "info";
   }
 
+  // Timeout per request type (ms). References require full workspace indexing.
+  private static readonly REQUEST_TIMEOUTS: Record<string, number> = {
+    "textDocument/references": 120000,
+    "textDocument/hover": 30000,
+    "textDocument/completion": 30000,
+    "textDocument/codeAction": 30000,
+  };
+  private static readonly DEFAULT_REQUEST_TIMEOUT = 30000;
+
   private sendRequest<T>(method: string, params?: any): Promise<T> {
     // Check if the process is started
     if (!this.process) {
@@ -277,14 +286,15 @@ export class LSPClient {
 
     const promise = new Promise<T>((resolve, reject) => {
       // Set timeout for request
+      const timeoutMs = LSPClient.REQUEST_TIMEOUTS[method] ?? LSPClient.DEFAULT_REQUEST_TIMEOUT;
       const timeoutId = setTimeout(() => {
         if (this.responsePromises.has(id)) {
           this.responsePromises.delete(id);
           reject(
-            new Error(`Timeout waiting for response to ${method} request`),
+            new Error(`Timeout waiting for response to ${method} request (${timeoutMs}ms)`),
           );
         }
-      }, 10000); // 10 second timeout
+      }, timeoutMs);
 
       // Store promise with cleanup for timeout
       this.responsePromises.set(id, {
