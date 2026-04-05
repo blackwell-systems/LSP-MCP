@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import path from "path";
+import * as fs from "fs/promises";
 import {
   LSPMessage,
   DiagnosticUpdateCallback,
@@ -74,9 +75,9 @@ export class LSPClient {
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
     if (this.buffer.length > MAX_BUFFER_SIZE) {
       logError(
-        `Buffer size exceeded ${MAX_BUFFER_SIZE} bytes, clearing buffer to prevent memory issues`,
+        `Buffer size exceeded ${MAX_BUFFER_SIZE} bytes, discarding entire buffer to prevent mid-message parse`,
       );
-      this.buffer = this.buffer.substring(this.buffer.length - MAX_BUFFER_SIZE);
+      this.buffer = "";
     }
 
     // Process complete messages
@@ -129,7 +130,9 @@ export class LSPClient {
       try {
         const message = JSON.parse(content) as LSPMessage;
         this.messageQueue.push(message);
-        this.processMessageQueue();
+        this.processMessageQueue().catch((err) =>
+          logError("Unhandled error in processMessageQueue:", err)
+        );
       } catch (error) {
         logError("Failed to parse LSP message:", error);
       }
@@ -165,6 +168,12 @@ export class LSPClient {
       warning("Error logging LSP message:", error);
     }
 
+    this.handleServerResponse(message);
+    await this.handleNotification(message);
+    await this.handleServerRequest(message);
+  }
+
+  private handleServerResponse(message: LSPMessage): void {
     // Handle response messages
     if (
       "id" in message &&
@@ -188,7 +197,9 @@ export class LSPClient {
         `LSP Server Capabilities: ${JSON.stringify(this.serverCapabilities, null, 2)}`,
       );
     }
+  }
 
+  private async handleNotification(message: LSPMessage): Promise<void> {
     // Handle notification messages
     if ("method" in message && message.id === undefined) {
       // Handle diagnostic notifications
@@ -243,9 +254,10 @@ export class LSPClient {
           }
         }
       }
-
     }
+  }
 
+  private async handleServerRequest(message: LSPMessage): Promise<void> {
     // Handle server-initiated requests (have id but originate from server, not responses)
     if ("method" in message && "id" in message) {
       let result: any = null;
@@ -415,7 +427,6 @@ export class LSPClient {
           version: "0.3.0",
         },
         rootUri: "file://" + resolvedRootDir,
-        rootPath: resolvedRootDir,
         workspaceFolders: [
           {
             uri: "file://" + resolvedRootDir,
@@ -617,6 +628,29 @@ export class LSPClient {
     this.diagnosticSubscribers.clear();
   }
 
+  private getOverlappingDiagnostics(
+    uri: string,
+    range: {
+      start: { line: number; character: number };
+      end: { line: number; character: number };
+    },
+  ): any[] {
+    const diagnostics = this.documentDiagnostics.get(uri) ?? [];
+    return diagnostics.filter((d) => {
+      if (!d.range) return false;
+      const dStart = d.range.start;
+      const dEnd = d.range.end;
+      // Overlap: d starts before range ends, AND d ends after range starts
+      const startsBeforeRangeEnd =
+        dStart.line < range.end.line ||
+        (dStart.line === range.end.line && dStart.character <= range.end.character);
+      const endsAfterRangeStart =
+        dEnd.line > range.start.line ||
+        (dEnd.line === range.start.line && dEnd.character >= range.start.character);
+      return startsBeforeRangeEnd && endsAfterRangeStart;
+    });
+  }
+
   async getInfoOnLocation(
     uri: string,
     position: { line: number; character: number },
@@ -713,7 +747,7 @@ export class LSPClient {
         textDocument: { uri },
         range,
         context: {
-          diagnostics: [],
+          diagnostics: this.getOverlappingDiagnostics(uri, range),
         },
       });
 
@@ -764,7 +798,6 @@ export class LSPClient {
 
       // Read the file content from disk and reopen the document
       try {
-        const fs = await import("fs/promises");
         debug(`Reading file content from: ${filePath}`);
         const fileContent = await fs.readFile(filePath, "utf-8");
         debug(`File content length: ${fileContent.length} characters`);
