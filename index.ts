@@ -125,7 +125,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Get the combined tool handlers from core and extensions
 const getToolsHandlers = () => {
   // Get core handlers, passing the server instance for notifications
-  const coreHandlers = getToolHandlers(lspClient, lspServerPath, lspServerArgs, setLspClient, rootDir, setRootDir, server);
+  const coreHandlers = getToolHandlers(() => lspClient, lspServerPath, lspServerArgs, setLspClient, rootDir, setRootDir, server);
   // Get extension handlers
   const extensionHandlers = getExtensionToolHandlers();
   // Combine them (extensions take precedence in case of name conflicts)
