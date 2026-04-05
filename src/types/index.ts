@@ -6,15 +6,32 @@ import { ToolSchema } from "@modelcontextprotocol/sdk/types.js";
 // LSP message handling
 export interface LSPMessage {
   jsonrpc: string;
-  id?: number | string;
-  method?: string;
-  params?: any;
-  result?: any;
-  error?: any;
+  id?: number | string;  // present for requests and responses
+  method?: string;        // present for requests and notifications
+  params?: Record<string, unknown>;
+  result?: unknown;
+  error?: {
+    code: number;
+    message: string;
+    data?: unknown;
+  };
+}
+
+// LSP diagnostic type
+export interface LSPDiagnostic {
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  severity?: 1 | 2 | 3 | 4; // error, warning, info, hint
+  code?: number | string;
+  source?: string;
+  message: string;
+  data?: unknown;
 }
 
 // Define a type for diagnostic subscribers
-export type DiagnosticUpdateCallback = (uri: string, diagnostics: any[]) => void;
+export type DiagnosticUpdateCallback = (uri: string, diagnostics: LSPDiagnostic[]) => void;
 
 // Define a type for subscription context
 export interface SubscriptionContext {
@@ -29,7 +46,7 @@ export const ToolInputSchema = ToolSchema.shape.inputSchema;
 export type ToolInput = z.infer<typeof ToolInputSchema>;
 
 // Tool handler types
-export type ToolHandler = (args: any) => Promise<{ content: Array<{ type: string, text: string }>, isError?: boolean }>;
+export type ToolHandler = (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string, text: string }>, isError?: boolean }>;
 
 // Resource handler type
 export type ResourceHandler = (uri: string) => Promise<{ contents: Array<{ type: string, text: string, uri: string }> }>;
@@ -38,7 +55,10 @@ export type ResourceHandler = (uri: string) => Promise<{ contents: Array<{ type:
 export type SubscriptionHandler = (uri: string) => Promise<{ ok: boolean, context?: SubscriptionContext, error?: string }>;
 
 // Unsubscription handler type
-export type UnsubscriptionHandler = (uri: string, context: any) => Promise<{ ok: boolean, error?: string }>;
+export type UnsubscriptionHandler = (
+  uri: string,
+  context: SubscriptionContext | undefined,
+) => Promise<{ ok: boolean, error?: string }>;
 
 // Prompt types
 export interface Prompt {
