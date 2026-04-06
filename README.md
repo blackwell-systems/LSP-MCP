@@ -6,13 +6,15 @@
 [![Languages](https://img.shields.io/badge/languages-7_verified-green.svg)](#multi-language-support)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The most complete MCP server for language intelligence. **22 tools** covering navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
+The most complete MCP server for language intelligence — built for agents, not just protocol passthrough. **22 tools** spanning navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
 
-Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session** — agents operate on a fully indexed workspace with real-time diagnostics and cross-file awareness, not a cold-started stub that forgets context between calls.
+Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session** — agents operate on a fully indexed, stateful workspace with real-time diagnostics and cross-file reasoning, not a cold-started stub that forgets context between calls.
+
+Designed for agentic workflows where correctness, persistence, and cross-language reliability are required.
 
 ## Why lsp-mcp
 
-| | lsp-mcp | typical alternatives |
+| | lsp-mcp | other MCP-LSP implementations |
 |--|---------|---------------------|
 | Languages (CI-verified) | **7** | 1–2 |
 | Tools | **22** | 3–5 |
@@ -21,6 +23,13 @@ Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server
 | Cross-file references | **✓** | rarely |
 | Real-time diagnostic subscriptions | **✓** | ✗ |
 | Test coverage | **76% statements, 86% functions** | rarely tested |
+
+## Use Cases
+
+- Agent-driven code analysis across large repositories
+- Automated refactoring with workspace-wide context
+- CI validation with real language server behavior
+- Multi-language code intelligence without IDE dependency
 
 ## Quick Start
 
