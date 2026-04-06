@@ -64,6 +64,7 @@ const LANGUAGES = [
     id: 'java',
     binary: 'jdtls',
     serverArgs: [],
+    logLevel: 'notice',  // verbose so crashes surface in CI
     fixture: path.join(__dirname, 'fixtures/java'),  // jdtls needs project root with pom.xml
     file: path.join(__dirname, 'fixtures/java', 'src', 'main', 'java', 'com', 'example', 'Person.java'),
     hoverLine: 5,     // line with 'public class Person' (shifted +1 by package declaration)
@@ -201,14 +202,20 @@ async function testLanguage(lang) {
     console.log(`\n[${lang.name}] Starting MCP server: node ${spawnArgs.join(' ')}`);
 
     serverProcess = spawn('node', spawnArgs, {
-      env: { ...process.env, LOG_LEVEL: 'error' },
+      env: { ...process.env, LOG_LEVEL: lang.logLevel || 'error' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
+    // Capture server stderr for diagnostics on failure
+    const serverStderrLines = [];
     serverProcess.stderr.on('data', (data) => {
-      // Suppress noisy LSP server stderr; only log in verbose mode
+      const text = data.toString().trim();
       if (process.env.VERBOSE) {
-        process.stderr.write(`[${lang.name}] STDERR: ${data.toString().trim()}\n`);
+        process.stderr.write(`[${lang.name}] STDERR: ${text}\n`);
+      }
+      // Always buffer error/critical lines for post-failure reporting
+      if (text.includes('[ERROR]') || text.includes('[CRITICAL]') || text.includes('[NOTICE]')) {
+        serverStderrLines.push(text);
       }
     });
 
@@ -288,6 +295,9 @@ async function testLanguage(lang) {
   } catch (err) {
     result.status = 'FAIL';
     result.details = err.message;
+    if (serverStderrLines && serverStderrLines.length > 0) {
+      console.log(`[${lang.name}] MCP server logs at failure:\n  ${serverStderrLines.slice(-10).join('\n  ')}`);
+    }
   } finally {
     // Disconnect client
     if (client) {
