@@ -26,13 +26,13 @@ const LANGUAGES = [
     serverArgs: ['--stdio'],
     fixture: path.join(__dirname, 'ts-project'),
     file: path.join(__dirname, 'ts-project', 'src', 'example.ts'),
-    hoverLine: 10,    // line with 'export interface Person'
+    hoverLine: 11,    // line with 'export interface Person' (line 10 is closing JSDoc */)
     hoverColumn: 18,  // column on 'Person'
   },
   {
     name: 'Python',
     id: 'python',
-    binary: 'pyright',
+    binary: 'pyright-langserver',  // pyright is the CLI; pyright-langserver is the LSP server
     serverArgs: ['--stdio'],
     fixture: path.join(__dirname, 'fixtures/python'),
     file: path.join(__dirname, 'fixtures/python', 'main.py'),

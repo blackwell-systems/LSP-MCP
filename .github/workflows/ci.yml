@@ -63,9 +63,12 @@ jobs:
         continue-on-error: true
         run: |
           wget -q "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz" -O /tmp/jdtls.tar.gz
-          sudo mkdir -p /opt/jdtls
+          sudo mkdir -p /opt/jdtls /tmp/jdtls-data
           sudo tar -xzf /tmp/jdtls.tar.gz -C /opt/jdtls
-          printf '#!/bin/bash\njava --add-modules=ALL-SYSTEM --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -jar /opt/jdtls/plugins/org.eclipse.equinox.launcher_*.jar -configuration /opt/jdtls/config_linux -data /tmp/jdtls-data "$@"\n' | sudo tee /usr/local/bin/jdtls > /dev/null
+          # Resolve launcher jar path (wildcard doesn't expand inside quoted strings)
+          LAUNCHER=$(ls /opt/jdtls/plugins/org.eclipse.equinox.launcher_*.jar | head -1)
+          printf '#!/bin/bash\nexec java --add-modules=ALL-SYSTEM --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -jar %s -configuration /opt/jdtls/config_linux -data /tmp/jdtls-data "$@"\n' "$LAUNCHER" | sudo tee /usr/local/bin/jdtls > /dev/null
           sudo chmod +x /usr/local/bin/jdtls
+          cat /usr/local/bin/jdtls
       - name: Run multi-language tests
         run: npm run test:multi-lang
