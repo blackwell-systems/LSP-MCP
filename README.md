@@ -2,11 +2,12 @@
 
 [![Blackwell Systems](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
 [![CI](https://github.com/blackwell-systems/LSP-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/LSP-MCP/actions)
+[![LSP 3.17](https://img.shields.io/badge/LSP-3.17-blue.svg)](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An MCP server that bridges the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/). LLM agents use it to query real language servers for hover information, completions, diagnostics, code actions, and references — without spawning a new server process per request.
 
-Fully conformant with [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/). Works with any compliant language server: `typescript-language-server`, `rust-analyzer`, `gopls`, `haskell-language-server`, `clangd`, and others.
+Built to the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) — correct lifecycle, capability negotiation, progress protocol, and response shapes throughout. Works with any compliant language server: `typescript-language-server`, `rust-analyzer`, `gopls`, `haskell-language-server`, `clangd`, and others.
 
 ## Quick Start
 
@@ -61,33 +62,35 @@ The server starts a persistent LSP connection when the MCP session begins. Tools
 
 ### LSP 3.17 Conformance
 
+This project was built against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) directly — each protocol area was implemented by reading the relevant spec section and verified through integration testing against real language servers. The spec sections referenced below are live links into the specification.
+
 The client implements the full LSP 3.17 lifecycle and protocol correctly:
 
-**Lifecycle (§3.15.1–3.15.4)**
+**[Lifecycle](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#lifeCycleMessages) (§3.15.1–3.15.4)**
 - Correct `initialize` → `initialized` → `shutdown` sequence
 - Graceful async shutdown via `SIGINT`/`SIGTERM` — the LSP subprocess is never orphaned
 - Client capabilities declared for every feature used: `hover`, `completion`, `references`, `definition`, `implementation`, `typeDefinition`, `codeAction`, `publishDiagnostics`, `window.workDoneProgress`, `workspace.configuration`
 - Server capabilities checked before sending requests — if the server doesn't declare `hoverProvider`, `completionProvider`, `referencesProvider`, or `codeActionProvider`, the request is skipped rather than sent and silently returning empty results
 
-**Progress protocol (§3.18)**
+**[Progress protocol](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#progress) (§3.18)**
 - `window/workDoneProgress/create` — token pre-registered before acknowledging, so subsequent `$/progress` notifications are always recognized
 - `$/progress` begin/report/end — all three kinds handled; workspace-ready detection waits for all active tokens to complete `end` before sending references requests
 
 **Server-initiated requests**
-- `workspace/configuration` — responds with `null` per item, unblocking language servers (e.g. gopls) that gate workspace loading on this response
+- [`workspace/configuration`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_configuration) — responds with `null` per item, unblocking language servers (e.g. gopls) that gate workspace loading on this response
 - `client/registerCapability` — dynamic capability registration acknowledged
 - Unknown server-initiated requests receive a `null` response rather than being silently dropped
 
-**Message handling**
-- Content-Length framing uses `Buffer.byteLength` for correct UTF-8 byte counts (§3.4)
-- JSON-RPC 2.0 request/response/notification shapes correct throughout (§3.3)
-- LSP error codes `-32601` (MethodNotFound) and `-32002` (ServerNotInitialized) logged as warnings; other codes at debug level (§3.6)
+**[Message framing](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol) and JSON-RPC**
+- Content-Length framing uses `Buffer.byteLength` for correct UTF-8 byte counts ([§3.4](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol))
+- JSON-RPC 2.0 request/response/notification shapes correct throughout ([§3.3](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol))
+- LSP error codes `-32601` (MethodNotFound) and `-32002` (ServerNotInitialized) logged as warnings; other codes at debug level ([§3.6](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#responseMessage))
 
 **Response shapes**
-- `textDocument/hover` — handles `MarkupContent` (checks `kind: "markdown" | "plaintext"`), deprecated `MarkedString[]`, and plain string forms (§3.15.11)
-- `textDocument/completion` — handles both `CompletionList` and `CompletionItem[]` response shapes (§3.15.13)
-- `textDocument/codeAction` — `CodeActionContext.diagnostics` populated with diagnostics overlapping the requested range, enabling diagnostic-specific quick fixes (§3.15.22)
-- `textDocument/publishDiagnostics` — params shape correct; `versionSupport: false` declared and honored (§3.17.1)
+- [`textDocument/hover`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover) — handles `MarkupContent` (checks `kind: "markdown" | "plaintext"`), deprecated `MarkedString[]`, and plain string forms (§3.15.11)
+- [`textDocument/completion`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion) — handles both `CompletionList` and `CompletionItem[]` response shapes (§3.15.13)
+- [`textDocument/codeAction`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_codeAction) — `CodeActionContext.diagnostics` populated with diagnostics overlapping the requested range, enabling diagnostic-specific quick fixes (§3.15.22)
+- [`textDocument/publishDiagnostics`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_publishDiagnostics) — params shape correct; `versionSupport: false` declared and honored (§3.17.1)
 
 ## Prerequisites
 
