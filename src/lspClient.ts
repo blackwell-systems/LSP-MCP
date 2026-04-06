@@ -357,6 +357,8 @@ export class LSPClient {
     "textDocument/formatting": 30000,
     "textDocument/rename": 30000,
     "workspace/executeCommand": 30000,
+    "textDocument/declaration": 30000,
+    "textDocument/prepareRename": 30000,
   };
   private static readonly DEFAULT_REQUEST_TIMEOUT = 30000;
 
@@ -493,6 +495,7 @@ export class LSPClient {
             definition: {},
             implementation: {},
             typeDefinition: {},
+            declaration: {},
             codeAction: {
               dynamicRegistration: true,
             },
@@ -507,7 +510,7 @@ export class LSPClient {
               hierarchicalDocumentSymbolSupport: true,
             },
             rename: {
-              prepareSupport: false,
+              prepareSupport: true,
             },
             formatting: {},
             diagnostic: {
@@ -1135,6 +1138,143 @@ export class LSPClient {
       return response ?? null;
     } catch (err) {
       warning(`Error executing command: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return null;
+  }
+
+  async applyWorkspaceEdit(workspaceEdit: any): Promise<void> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Applying workspace edit`);
+
+    // Collect all TextEdit arrays keyed by URI
+    const editsByUri: Map<string, Array<{ range: any; newText: string }>> = new Map();
+
+    if (workspaceEdit.documentChanges && Array.isArray(workspaceEdit.documentChanges)) {
+      // TextDocumentEdit[] form
+      for (const docEdit of workspaceEdit.documentChanges) {
+        const uri = docEdit.textDocument?.uri ?? docEdit.uri;
+        if (!uri) continue;
+        const edits: Array<{ range: any; newText: string }> = editsByUri.get(uri) ?? [];
+        edits.push(...(docEdit.edits ?? []));
+        editsByUri.set(uri, edits);
+      }
+    } else if (workspaceEdit.changes && typeof workspaceEdit.changes === 'object') {
+      // Record<uri, TextEdit[]> form
+      for (const [uri, edits] of Object.entries(workspaceEdit.changes)) {
+        editsByUri.set(uri, edits as Array<{ range: any; newText: string }>);
+      }
+    }
+
+    for (const [uri, edits] of editsByUri) {
+      const filePath = uri.replace(/^file:\/\//, "");
+      let content = await fs.readFile(filePath, "utf-8");
+      const lines = content.split("\n");
+
+      // Apply edits in reverse order (bottom-to-top) to preserve offsets
+      const sortedEdits = [...edits].sort((a, b) => {
+        const lineDiff = b.range.start.line - a.range.start.line;
+        if (lineDiff !== 0) return lineDiff;
+        return b.range.start.character - a.range.start.character;
+      });
+
+      for (const edit of sortedEdits) {
+        const startLine = edit.range.start.line;
+        const startChar = edit.range.start.character;
+        const endLine = edit.range.end.line;
+        const endChar = edit.range.end.character;
+
+        const before = lines[startLine].slice(0, startChar);
+        const after = lines[endLine].slice(endChar);
+        const newLines = (before + edit.newText + after).split("\n");
+
+        lines.splice(startLine, endLine - startLine + 1, ...newLines);
+      }
+
+      content = lines.join("\n");
+      await fs.writeFile(filePath, content, "utf-8");
+      debug(`Applied ${edits.length} edit(s) to ${filePath}`);
+
+      // Notify LSP server of the change via didChange
+      const languageId = this.fileLanguageIds.get(uri) ?? "plaintext";
+      await this.openDocument(uri, content, languageId);
+    }
+  }
+
+  async getDeclaration(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting declaration at location: ${uri} (${position.line}:${position.character})`);
+
+    if (!this.serverCapabilities?.declarationProvider) {
+      debug("Server does not declare declarationProvider capability — skipping declaration request");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/declaration", {
+        textDocument: { uri },
+        position,
+      });
+
+      if (Array.isArray(response)) {
+        // Normalize LocationLink[] to Location[] if needed
+        return response.map((loc: any) => {
+          if (loc.targetUri) {
+            // LocationLink shape — map to Location
+            return { uri: loc.targetUri, range: loc.targetRange };
+          }
+          return loc;
+        });
+      } else if (response && response.uri) {
+        // Single Location
+        return [response];
+      }
+    } catch (err) {
+      warning(`Error getting declaration: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  async prepareRename(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<any | null> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Preparing rename at: ${uri} (${position.line}:${position.character})`);
+
+    // prepareRename requires renameProvider to be an object with prepareProvider
+    const renameProvider = this.serverCapabilities?.renameProvider;
+    if (!renameProvider) {
+      debug("Server does not declare renameProvider capability — skipping prepareRename request");
+      return null;
+    }
+    if (typeof renameProvider !== 'object' || !renameProvider.prepareProvider) {
+      debug("Server renameProvider does not support prepareProvider — skipping prepareRename request");
+      return null;
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/prepareRename", {
+        textDocument: { uri },
+        position,
+      });
+
+      return response ?? null;
+    } catch (err) {
+      warning(`Error preparing rename: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     return null;
