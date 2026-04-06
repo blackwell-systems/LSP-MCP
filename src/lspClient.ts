@@ -18,7 +18,7 @@ import { uriToFilePath } from "./shared/utils.js";
 
 export class LSPClient {
   private process: any;
-  private buffer: string = "";
+  private bufferBytes: Buffer = Buffer.alloc(0);
   private messageQueue: LSPMessage[] = [];
   private nextId: number = 1;
   private responsePromises: Map<
@@ -112,42 +112,51 @@ export class LSPClient {
   }
 
   private handleData(data: Buffer): void {
-    // Append new data to buffer
-    this.buffer += data.toString();
+    // Accumulate raw bytes — Content-Length is a UTF-8 byte count, so we must
+    // use byte-based slicing. String-based substring() counts UTF-16 code units
+    // and overshoots on any response containing multi-byte Unicode characters
+    // (e.g. TypeScript hover docs with →, •, or non-ASCII symbols).
+    this.bufferBytes = Buffer.concat([this.bufferBytes, data]);
 
-    // Implement a safety limit to prevent excessive buffer growth
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
-    if (this.buffer.length > MAX_BUFFER_SIZE) {
+    if (this.bufferBytes.length > MAX_BUFFER_SIZE) {
       error(
         `Buffer size exceeded ${MAX_BUFFER_SIZE} bytes, discarding entire buffer to prevent mid-message parse`,
       );
-      this.buffer = "";
+      this.bufferBytes = Buffer.alloc(0);
     }
 
     // Process complete messages
     while (true) {
-      // Look for the standard LSP header format - this captures the entire header including the \r\n\r\n
-      const headerMatch = this.buffer.match(/^Content-Length: (\d+)\r\n\r\n/);
-      if (!headerMatch) break;
+      // Find the \r\n\r\n separator between header and body
+      const headerSep = this.bufferBytes.indexOf('\r\n\r\n');
+      if (headerSep === -1) break;
+
+      const headerStr = this.bufferBytes.slice(0, headerSep).toString('ascii');
+      const headerMatch = headerStr.match(/Content-Length: (\d+)/);
+      if (!headerMatch) {
+        // Malformed header — discard up to and including the separator
+        this.bufferBytes = this.bufferBytes.slice(headerSep + 4);
+        continue;
+      }
 
       const contentLength = parseInt(headerMatch[1], 10);
-      const headerEnd = headerMatch[0].length;
+      const bodyStart = headerSep + 4; // 4 bytes = \r\n\r\n
 
-      // Prevent processing unreasonably large messages
       if (contentLength > MAX_BUFFER_SIZE) {
         error(
           `Received message with content length ${contentLength} exceeds maximum size, skipping`,
         );
-        this.buffer = this.buffer.substring(headerEnd + contentLength);
+        this.bufferBytes = this.bufferBytes.slice(bodyStart + contentLength);
         continue;
       }
 
-      // Check if we have the complete message (excluding the header)
-      if (this.buffer.length < headerEnd + contentLength) break; // Message not complete yet
+      // Wait until we have the full body
+      if (this.bufferBytes.length < bodyStart + contentLength) break;
 
-      // Extract the message content - using exact content length without including the header
-      const content = this.buffer.substring(headerEnd, headerEnd + contentLength);
-      this.buffer = this.buffer.substring(headerEnd + contentLength);
+      // Extract exactly contentLength bytes and decode as UTF-8
+      const content = this.bufferBytes.slice(bodyStart, bodyStart + contentLength).toString('utf-8');
+      this.bufferBytes = this.bufferBytes.slice(bodyStart + contentLength);
 
       // Parse the message and add to queue
       try {
@@ -1550,7 +1559,7 @@ export class LSPClient {
     }
 
     // Reset state
-    this.buffer = "";
+    this.bufferBytes = Buffer.alloc(0);
     this.messageQueue = [];
     this.nextId = 1;
     this.responsePromises.clear();
