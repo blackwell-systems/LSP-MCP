@@ -131,7 +131,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Get the combined tool handlers from core and extensions
 const getToolsHandlers = () => {
   // Get core handlers, passing the server instance for notifications
-  const coreHandlers = getToolHandlers(() => lspClient, lspServerPath, lspServerArgs, setLspClient, rootDir, setRootDir, server);
+  const coreHandlers = getToolHandlers(() => lspClient, lspServerPath, lspServerArgs, setLspClient, rootDir, setRootDir);
   // Get extension handlers
   const extensionHandlers = getExtensionToolHandlers();
   // Combine them (extensions take precedence in case of name conflicts)
@@ -407,19 +407,11 @@ async function runServer() {
   
   notice("LSP MCP Server running on stdio");
   
-  // Wait a brief moment for the MCP initialization handshake to complete
-  // before enabling notifications
-  setTimeout(async () => {
-    markServerInitialized();
-    info("Using LSP server:", lspServerPath);
-    if (lspServerArgs.length > 0) {
-      info("With arguments:", lspServerArgs.join(' '));
-    }
-    
-    // Create LSP client instance and immediately initialize it
-    lspClient = new LSPClient(lspServerPath, lspServerArgs);
-    await lspClient.initialize(process.cwd());
-  }, 100); // Small delay to allow MCP handshake to complete
+  markServerInitialized();
+  info("Using LSP server:", lspServerPath);
+  if (lspServerArgs.length > 0) {
+    info("With arguments:", lspServerArgs.join(' '));
+  }
 }
 
 

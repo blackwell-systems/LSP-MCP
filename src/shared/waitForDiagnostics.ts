@@ -26,6 +26,10 @@ export const waitForDiagnostics = async (
       `${targetUris.length} file(s)…`,
   );
 
+  if (targetUris.length === 0) {
+    return Promise.resolve();
+  }
+
   return new Promise<void>((resolve) => {
     /* ------------------------------------------------------------------ util */
     const finish = (reason: string): void => {
