@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `go_to_definition` tool — `textDocument/definition`, normalizes `LocationLink[]` to `Location[]`
+- `get_document_symbols` tool — `textDocument/documentSymbol`, returns both `DocumentSymbol[]` tree and `SymbolInformation[]` flat shapes as-is
+- `get_workspace_symbols` tool — `workspace/symbol`, cross-file symbol search by query string
+- `get_signature_help` tool — `textDocument/signatureHelp`, returns active overload and parameter index at call sites
+- `format_document` tool — `textDocument/formatting`, returns `TextEdit[]` for agent inspection (not applied automatically)
+- `rename_symbol` tool — `textDocument/rename`, returns `WorkspaceEdit` for agent inspection (not applied automatically)
+- Client capability declarations for `signatureHelp`, `documentSymbol`, `rename`, `formatting` added to `initialize` params
+- LSP process close now immediately rejects all pending promises — callers fail fast instead of waiting for individual timeouts when the language server crashes
+
+### Fixed
+- `throw error` → `throw err` in `initialize()` catch block — was throwing the logging function instead of the caught exception, crashing the MCP server on any LSP initialization failure
+- Removed `-noverify` from jdtls CI wrapper — flag was removed in Java 17 and caused immediate JVM crash on startup
+- Java fixture restructured to Maven layout (`pom.xml` + `src/main/java/com/example/`) for faster jdtls named-project initialization vs invisible-project mode
+
+### Added
 - `restart_lsp_server` tool - restart the LSP server process without restarting the MCP server
 - Unit test suite for `waitForDiagnostics` function with coverage for timing, snapshot exclusion, and timeout behaviors
 - Unit tests for core modules: logging, LSP client helpers, extensions, tools utilities, resource utilities (50 new tests across 5 files)
