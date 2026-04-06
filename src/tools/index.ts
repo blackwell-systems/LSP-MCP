@@ -224,7 +224,13 @@ async function handleStartLsp(
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     error(`Error starting LSP server: ${errorMessage}`);
-    throw new Error(`Failed to start LSP server: ${errorMessage}`);
+    // Return error content instead of throwing — throwing from here can produce
+    // an uncaught exception when the MCP SDK routes the rejection through a
+    // then-chain with no rejection handler for certain error shapes.
+    return {
+      content: [{ type: "text", text: `Failed to start LSP server: ${errorMessage}` }],
+      isError: true,
+    };
   }
 }
 

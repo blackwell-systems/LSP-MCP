@@ -375,6 +375,14 @@ process.on('exit', () => {
   // Intentionally empty — async cleanup is handled by SIGINT/SIGTERM above.
 });
 
+// Catch unhandled promise rejections — in Node 15+ these abort the process by default.
+// LSP subprocess crashes produce rejected promises; if any escape the catch chain they
+// should be logged and ignored rather than killing the MCP server.
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  warning(`Unhandled promise rejection (non-fatal): ${message}`);
+});
+
 // Log uncaught exceptions
 process.on('uncaughtException', (error) => {
   const errorMessage = error instanceof Error ? error.message : String(error);
