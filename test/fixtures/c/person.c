@@ -1,14 +1,5 @@
-/**
- * A simple person struct with greeting functionality.
- */
-typedef struct {
-    char *name;
-    int age;
-} Person;
+#include "person.h"
 
-/**
- * Create a person with the given name and age.
- */
 Person create_person(const char *name, int age) {
     Person p;
     p.name = (char *)name;

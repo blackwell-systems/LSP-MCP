@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "/placeholder",
+    "command": "cc -std=c11 person.c greeter.c -o person",
+    "file": "person.c"
+  },
+  {
+    "directory": "/placeholder",
+    "command": "cc -std=c11 person.c greeter.c -o person",
+    "file": "greeter.c"
+  }
+]
