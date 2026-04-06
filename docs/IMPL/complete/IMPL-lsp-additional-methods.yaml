@@ -1,3 +1,4 @@
+completion_date: "2026-04-05"
 title: LSP Additional Methods as MCP Tools
 feature_slug: lsp-additional-methods
 verdict: SUITABLE
@@ -673,6 +674,7 @@ waves:
             - src/tools/index.ts
           dependencies:
             - A
+          context_source: prepared-brief
 quality_gates:
     level: standard
     gates:
@@ -688,6 +690,24 @@ quality_gates:
           command: npm test
           required: true
           repo: LSP-MCP
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: 8f0570e
+        files_changed:
+            - src/lspClient.ts
+        verification: PASS
+        notes: 'Added getTypeDefinition, getImplementation, executeCommand methods and workspace/executeCommand REQUEST_TIMEOUTS entry. Build and typecheck pass. Pre-commit hook verified build. Capabilities block unchanged (implementation: {} count=1). All 4 postconditions pass.'
+    B:
+        status: complete
+        branch: main
+        commit: a32f577
+        files_changed:
+            - src/types/index.ts
+            - src/tools/index.ts
+        verification: PASS
+        notes: Added 3 Zod schemas (GoToTypeDefinitionArgsSchema, GoToImplementationArgsSchema, ExecuteCommandArgsSchema), 3 handler functions, and registered all 3 in getToolHandlers and getToolDefinitions. Build, typecheck, and tools unit tests pass. Schema count is 18 (not 17 as IMPL estimated — file had 15 pre-existing schemas, not 14). Handler count (19) and tool name registration count (6) match exactly.
 pre_mortem:
     overall_risk: low
     rows:
@@ -741,5 +761,5 @@ pre_mortem:
           mitigation: |-
             The brief specifies "17 (14 existing + 3 new)" — Agent B should verify the
             current count with grep before checking postconditions if uncertain.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

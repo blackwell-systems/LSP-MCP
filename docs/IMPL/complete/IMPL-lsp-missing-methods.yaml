@@ -1,3 +1,4 @@
+completion_date: "2026-04-05"
 title: LSP 3.17 Missing Methods as MCP Tools
 feature_slug: lsp-missing-methods
 verdict: SUITABLE
@@ -914,6 +915,7 @@ waves:
           files:
             - src/types/index.ts
             - src/tools/index.ts
+          context_source: prepared-brief
 quality_gates:
     level: standard
     gates:
@@ -929,6 +931,24 @@ quality_gates:
           command: npm test
           required: true
           repo: LSP-MCP
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: ecf8b0d
+        files_changed:
+            - src/lspClient.ts
+        verification: PASS
+        notes: 'Added 6 LSP client methods (getDefinition, getDocumentSymbols, getWorkspaceSymbols, getSignatureHelp, formatDocument, renameSymbol), 4 capability declarations in initialize(), and 6 REQUEST_TIMEOUTS entries. TypeScript build and type check pass cleanly. Postconditions verified: 6 methods present, 12+ capability/usage matches.'
+    B:
+        status: complete
+        branch: main
+        commit: 052c477
+        files_changed:
+            - src/types/index.ts
+            - src/tools/index.ts
+        verification: PASS
+        notes: 'Added 6 Zod schemas to types/index.ts, expanded import in tools/index.ts, added 6 handler functions (handleGoToDefinition, handleGetDocumentSymbols, handleGetWorkspaceSymbols, handleGetSignatureHelp, handleFormatDocument, handleRenameSymbol), registered all 6 in getToolHandlers, added 6 entries to getToolDefinitions. Build, typecheck, and test:tools all pass. Postconditions: 15 schemas (9 existing + 6 new), 16 handlers (10 existing + 6 new), 12 tool name occurrences (each registered twice).'
 pre_mortem:
     overall_risk: low
     rows:
@@ -981,5 +1001,5 @@ pre_mortem:
             Agent B's brief explicitly states "Do NOT modify index.ts — no wiring changes
             needed there. Tool handlers are auto-discovered via getToolHandlers()." The
             constraint section makes this prominent.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

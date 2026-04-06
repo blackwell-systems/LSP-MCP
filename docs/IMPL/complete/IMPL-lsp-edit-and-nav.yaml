@@ -1,3 +1,4 @@
+completion_date: "2026-04-05"
 title: LSP Edit-and-Nav — applyEdit, declaration, prepareRename
 feature_slug: lsp-edit-and-nav
 verdict: SUITABLE
@@ -776,6 +777,7 @@ waves:
             - src/tools/index.ts
           dependencies:
             - A
+          context_source: prepared-brief
 quality_gates:
     level: standard
     gates:
@@ -791,6 +793,24 @@ quality_gates:
           command: npm test
           required: true
           repo: LSP-MCP
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: 66f9ccf
+        files_changed:
+            - src/lspClient.ts
+        verification: PASS
+        notes: Added applyWorkspaceEdit, getDeclaration, prepareRename methods. Added declaration:{} capability, REQUEST_TIMEOUTS for both new methods, prepareSupport changed to true. Build, typecheck, and all 7 postconditions pass. No worktrees were configured for this wave (only main worktree exists in repo); worked directly on main.
+    B:
+        status: complete
+        branch: main
+        commit: e6e65b9
+        files_changed:
+            - src/types/index.ts
+            - src/tools/index.ts
+        verification: PASS
+        notes: 'Added ApplyEditArgsSchema, GoToDeclarationArgsSchema, PrepareRenameArgsSchema to types/index.ts. Added handleApplyEdit, handleGoToDeclaration, handlePrepareRename handlers with handler+definition registrations in tools/index.ts. All postconditions pass: 21 schemas, 22 handlers, 6 tool name occurrences. TypeScript type check clean, build clean, tools-utils.test.js all 10 tests pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -849,5 +869,5 @@ pre_mortem:
           mitigation: |-
             Agent B's brief explicitly states "The tool name for apply_edit must be
             `apply_edit` (not `workspace_apply_edit` or `apply_workspace_edit`)."
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
