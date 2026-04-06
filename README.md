@@ -12,6 +12,15 @@ Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server
 
 Designed for agentic workflows where correctness, persistence, and cross-language reliability are required.
 
+## The Problem
+
+Most MCP-LSP bridges are stateless and loosely implemented.
+They lose workspace context between calls, skip parts of the spec, and behave inconsistently across languages.
+
+That makes them unreliable for agents operating on real codebases.
+
+lsp-mcp fixes that.
+
 ## Why lsp-mcp
 
 | | lsp-mcp | other MCP-LSP implementations |
@@ -26,10 +35,10 @@ Designed for agentic workflows where correctness, persistence, and cross-languag
 
 ## Use Cases
 
-- Agent-driven code analysis across large repositories
-- Automated refactoring with workspace-wide context
-- CI validation with real language server behavior
-- Multi-language code intelligence without IDE dependency
+- Agent-driven analysis across large, multi-language repositories
+- Safe, workspace-wide refactoring with full context
+- CI pipelines that validate against real language server behavior
+- Code intelligence without relying on an IDE
 
 ## Quick Start
 
