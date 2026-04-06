@@ -172,3 +172,22 @@ export const RenameSymbolArgsSchema = z.object({
   column: z.coerce.number().describe("Column position of the symbol (1-based)"),
   new_name: z.string().describe("The new name for the symbol"),
 });
+
+export const GoToTypeDefinitionArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file containing the symbol"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+});
+
+export const GoToImplementationArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file containing the symbol"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+});
+
+export const ExecuteCommandArgsSchema = z.object({
+  command: z.string().describe("The command identifier to execute (from a code action's command field)"),
+  args: z.array(z.unknown()).optional().describe("Optional arguments to pass to the command"),
+});

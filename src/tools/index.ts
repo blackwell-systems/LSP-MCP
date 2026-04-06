@@ -18,6 +18,9 @@ import {
   GetSignatureHelpArgsSchema,
   FormatDocumentArgsSchema,
   RenameSymbolArgsSchema,
+  GoToTypeDefinitionArgsSchema,
+  GoToImplementationArgsSchema,
+  ExecuteCommandArgsSchema,
   ToolInput,
   ToolHandler
 } from "../types/index.js";
@@ -378,6 +381,69 @@ async function handleRenameSymbol(
   return { content: [{ type: "text", text }] };
 }
 
+async function handleGoToTypeDefinition(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof GoToTypeDefinitionArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Getting type definition in file: ${args.file_path} (${args.line}:${args.column})`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const locations = await lspClient!.getTypeDefinition(fileUri, {
+    line: args.line - 1,
+    character: args.column - 1
+  });
+  const formatted = locations.map((loc: any) => ({
+    file: loc.uri.replace(/^file:\/\//, ""),
+    line: loc.range.start.line + 1,
+    column: loc.range.start.character + 1,
+    end_line: loc.range.end.line + 1,
+    end_column: loc.range.end.character + 1,
+  }));
+  debug(`Found ${formatted.length} type definition location(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+}
+
+async function handleGoToImplementation(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof GoToImplementationArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Getting implementation in file: ${args.file_path} (${args.line}:${args.column})`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const locations = await lspClient!.getImplementation(fileUri, {
+    line: args.line - 1,
+    character: args.column - 1
+  });
+  const formatted = locations.map((loc: any) => ({
+    file: loc.uri.replace(/^file:\/\//, ""),
+    line: loc.range.start.line + 1,
+    column: loc.range.start.character + 1,
+    end_line: loc.range.end.line + 1,
+    end_column: loc.range.end.character + 1,
+  }));
+  debug(`Found ${formatted.length} implementation location(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+}
+
+async function handleExecuteCommand(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof ExecuteCommandArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Executing command: ${args.command}`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const result = await lspClient!.executeCommand(args.command, args.args as any[] | undefined);
+  const text = result !== null ? JSON.stringify(result, null, 2) : "Command executed successfully (no result returned)";
+  debug(`Execute command result: ${text.slice(0, 100)}`);
+  return { content: [{ type: "text", text }] };
+}
+
 // Define handlers for each tool
 export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerPath: string, lspServerArgs: string[], setLspClient: (client: LSPClient) => void, rootDir: string, setRootDir: (dir: string) => void, server?: any) => {
   return {
@@ -444,6 +510,18 @@ export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerP
     "rename_symbol": {
       schema: RenameSymbolArgsSchema,
       handler: (args: any) => handleRenameSymbol(getLspClient, args),
+    },
+    "go_to_type_definition": {
+      schema: GoToTypeDefinitionArgsSchema,
+      handler: (args: any) => handleGoToTypeDefinition(getLspClient, args),
+    },
+    "go_to_implementation": {
+      schema: GoToImplementationArgsSchema,
+      handler: (args: any) => handleGoToImplementation(getLspClient, args),
+    },
+    "execute_command": {
+      schema: ExecuteCommandArgsSchema,
+      handler: (args: any) => handleExecuteCommand(getLspClient, args),
     },
   };
 };
@@ -530,6 +608,21 @@ export const getToolDefinitions = () => {
       name: "rename_symbol",
       description: "Get a WorkspaceEdit for renaming a symbol across the entire workspace via LSP. Returns the edit object describing all files and positions that need to change — it is NOT applied automatically. Inspect the returned WorkspaceEdit to understand the full scope of a rename before applying it.",
       inputSchema: zodToJsonSchema(RenameSymbolArgsSchema) as ToolInput,
+    },
+    {
+      name: "go_to_type_definition",
+      description: "Jump to the definition of the type of a symbol at a specific location in a file via LSP. Unlike go_to_definition (which goes to where the symbol itself is defined), this navigates to the type declaration. Useful for interface types, type aliases, and class definitions when working with instances or variables.",
+      inputSchema: zodToJsonSchema(GoToTypeDefinitionArgsSchema) as ToolInput,
+    },
+    {
+      name: "go_to_implementation",
+      description: "Find all implementations of an interface or abstract method at a specific location in a file via LSP. Returns the file paths and positions of all concrete implementations. Use this to navigate from an interface declaration or abstract method to the concrete classes that implement it.",
+      inputSchema: zodToJsonSchema(GoToImplementationArgsSchema) as ToolInput,
+    },
+    {
+      name: "execute_command",
+      description: "Execute a workspace command via LSP. Commands are server-defined identifiers returned by code actions (in the command field of a CodeAction). Use this after get_code_actions to trigger a server-side operation such as applying a refactoring, generating code, or running a server-specific action. Returns the server-defined result or null.",
+      inputSchema: zodToJsonSchema(ExecuteCommandArgsSchema) as ToolInput,
     },
   ];
 };
