@@ -7,7 +7,7 @@
 
 An MCP server that bridges the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/). LLM agents use it to query real language servers for hover information, completions, diagnostics, code actions, and references — without spawning a new server process per request.
 
-Built to the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) — correct lifecycle, capability negotiation, progress protocol, and response shapes throughout. Works with any compliant language server: `typescript-language-server`, `rust-analyzer`, `gopls`, `clangd`, and others.
+Built to the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) — correct lifecycle, capability negotiation, progress protocol, and response shapes throughout. Works with any compliant language server: `typescript-language-server`, `rust-analyzer`, `gopls`, `clangd`, `intelephense`, and others.
 
 ## Quick Start
 

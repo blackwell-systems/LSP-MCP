@@ -69,6 +69,26 @@ const LANGUAGES = [
     hoverLine: 4,     // line with 'public class Person'
     hoverColumn: 14,  // column on 'Person'
   },
+  {
+    name: 'C',
+    id: 'c',
+    binary: 'clangd',
+    serverArgs: [],
+    fixture: path.join(__dirname, 'fixtures/c'),
+    file: path.join(__dirname, 'fixtures/c', 'person.c'),
+    hoverLine: 7,     // line with '} Person;' typedef
+    hoverColumn: 3,   // column on 'Person'
+  },
+  {
+    name: 'PHP',
+    id: 'php',
+    binary: 'intelephense',
+    serverArgs: ['--stdio'],
+    fixture: path.join(__dirname, 'fixtures/php'),
+    file: path.join(__dirname, 'fixtures/php', 'Person.php'),
+    hoverLine: 6,     // line with 'class Person {'
+    hoverColumn: 7,   // column on 'Person'
+  },
 ];
 
 // Custom transport that works with an existing child process

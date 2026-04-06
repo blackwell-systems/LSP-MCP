@@ -53,6 +53,10 @@ jobs:
         run: npm install -g typescript-language-server typescript
       - name: Install Pyright
         run: npm install -g pyright
+      - name: Install intelephense
+        run: npm install -g intelephense
+      - name: Install clangd
+        run: sudo apt-get install -y clangd
       - name: Install gopls
         run: go install golang.org/x/tools/gopls@latest
       - name: Install Rust toolchain + rust-analyzer
