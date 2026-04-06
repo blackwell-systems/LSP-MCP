@@ -1,5 +1,9 @@
 # lsp-mcp
 
+[![Blackwell Systems](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
+[![CI](https://github.com/blackwell-systems/LSP-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/LSP-MCP/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An MCP server that bridges the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/). LLM agents use it to query real language servers for hover information, completions, diagnostics, code actions, and references — without spawning a new server process per request.
 
 Fully conformant with [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/). Works with any compliant language server: `typescript-language-server`, `rust-analyzer`, `gopls`, `haskell-language-server`, `clangd`, and others.
