@@ -139,11 +139,19 @@ get_info_on_location(...) / get_references(...)
 close_document(...)
 ```
 
+**Rename workflow** (`prepare_rename` → `rename_symbol` → `apply_edit`):
+```
+prepare_rename(file_path=..., line=..., column=...)   # confirm rename is valid at this position
+rename_symbol(file_path=..., line=..., column=..., new_name="newName")  # returns WorkspaceEdit
+apply_edit(edit=<WorkspaceEdit>)                      # writes all changed files to disk
+did_change_watched_files(changes=[...])               # notify server of the disk changes
+```
+
 **Language IDs:** `typescript`, `typescriptreact`, `javascript`, `javascriptreact`, `python`, `go`, `rust`, `java`, `c`, `cpp`, `php`
 
 ## Resources
 
-Diagnostic resources support real-time subscriptions — the server sends `notifications/resources/updated` when diagnostics change.
+Diagnostic resources support real-time subscriptions — the server sends `notifications/resources/updated` when diagnostics change for a subscribed file.
 
 | Scheme | Description |
 |--------|-------------|
@@ -151,6 +159,15 @@ Diagnostic resources support real-time subscriptions — the server sends `notif
 | `lsp-diagnostics:///path/to/file` | Specific file (subscribable) |
 | `lsp-hover:///path/to/file?line=N&column=N&language_id=X` | Hover at position |
 | `lsp-completions:///path/to/file?line=N&column=N&language_id=X` | Completions at position |
+
+**Subscribing to real-time diagnostics:**
+```json
+{ "method": "resources/subscribe", "params": { "uri": "lsp-diagnostics:///path/to/file.ts" } }
+```
+The server sends `notifications/resources/updated` each time the language server publishes new diagnostics for that file. Read the resource after each notification to get the current diagnostic list:
+```json
+{ "method": "resources/read", "params": { "uri": "lsp-diagnostics:///path/to/file.ts" } }
+```
 
 ## LSP 3.17 Conformance
 
@@ -162,6 +179,8 @@ lsp-mcp is implemented directly against the [LSP 3.17 specification](https://mic
 - Correct JSON-RPC framing, error code handling, and response shape normalization across hover, completion, code actions, and diagnostics
 
 See [docs/lsp-conformance.md](./docs/lsp-conformance.md) for the full method coverage matrix and spec section references.
+
+See [docs/architecture.md](./docs/architecture.md) for the internal layer structure, `withDocument` pattern, URI handling, and resource subscription internals.
 
 ## Extensions
 
