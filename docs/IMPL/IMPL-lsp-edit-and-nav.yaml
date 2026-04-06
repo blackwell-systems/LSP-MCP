@@ -1,0 +1,853 @@
+title: LSP Edit-and-Nav — applyEdit, declaration, prepareRename
+feature_slug: lsp-edit-and-nav
+verdict: SUITABLE
+suitability_assessment: |
+    All four items are concrete, well-specified additions to an established pattern.
+    The didChange correctness fix was examined in lspClient.ts and is ALREADY
+    implemented (openDocument() at lines 561-583 already sends textDocument/didChange
+    when the document is open). No work is needed for that item — Agent A's scope
+    is adjusted to exclude it.
+
+    Remaining work decomposes cleanly:
+    - Agent A: src/lspClient.ts — add applyWorkspaceEdit(), getDeclaration(),
+      prepareRename(); add declaration: {} client capability; add REQUEST_TIMEOUTS
+      entries for the two new request methods.
+    - Agent B: src/types/index.ts + src/tools/index.ts — add 3 Zod schemas,
+      3 handler functions, register all 3 in getToolHandlers and getToolDefinitions.
+
+    File decomposition is disjoint. No shared types cross agent boundaries — Agent B
+    calls LSPClient methods whose signatures are fully specified as interface contracts.
+    The 2-wave structure is required (same pattern as prior IMPLs; single-wave caused
+    validation failures in lsp-missing-methods).
+
+    Key distinction for apply_edit: workspace/applyEdit is a SERVER-INITIATED request.
+    The MCP tool does NOT send workspace/applyEdit to the LSP server. Instead it applies
+    the WorkspaceEdit directly by reading files, applying TextEdit[] in reverse line
+    order, writing files back to disk, then calling openDocument() for each modified
+    file to send didChange notifications. This is pure file I/O + didChange.
+
+    Estimated times:
+    - Scout phase: ~15 min (codebase analysis + IMPL doc)
+    - Agent execution: ~25 min (2 agents x ~12 min avg, running in parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~45 min
+
+    Sequential baseline: ~30 min
+    Time savings: ~10 min parallel benefit; also provides interface spec as audit trail.
+
+    Recommendation: Proceed with parallel execution.
+test_command: npm test
+lint_command: npx tsc --noEmit
+file_ownership:
+    - file: src/lspClient.ts
+      agent: A
+      wave: 1
+      action: modify
+    - file: src/types/index.ts
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: src/tools/index.ts
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+interface_contracts:
+    - name: applyWorkspaceEdit
+      description: |-
+        Applies a WorkspaceEdit directly to disk without going through LSP server.
+        Iterates workspaceEdit.changes (URI -> TextEdit[]) or workspaceEdit.documentChanges
+        (TextDocumentEdit[]). For each file: reads file content, applies edits in
+        reverse line order (bottom-to-top to preserve offsets), writes file back to
+        disk, then calls openDocument() to send textDocument/didChange so the LSP
+        server sees the updated content. Returns void; throws on fs error.
+      definition: |
+        async applyWorkspaceEdit(workspaceEdit: any): Promise<void>
+      location: src/lspClient.ts
+    - name: getDeclaration
+      description: |-
+        LSP textDocument/declaration — navigate to the original declaration of a symbol
+        (e.g., forward declaration in C/C++). Same shape as getDefinition: normalizes
+        LocationLink[] to Location[]. Returns empty array if server does not declare
+        declarationProvider capability.
+        Capability key: serverCapabilities.declarationProvider
+      definition: |
+        async getDeclaration(
+          uri: string,
+          position: { line: number; character: number },
+        ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>>
+      location: src/lspClient.ts
+    - name: prepareRename
+      description: |-
+        LSP textDocument/prepareRename — validates that a rename is possible at the given
+        position before committing to rename_symbol. Returns Range, { range, placeholder },
+        { defaultBehavior: boolean }, or null. Returns null if rename is not supported at
+        this position or if server does not support prepareRename.
+        Capability key: serverCapabilities.renameProvider.prepareProvider (or
+        serverCapabilities.renameProvider === true for basic rename without prepare support).
+        If the server only has basic renameProvider (not an object with prepareProvider),
+        return null to indicate prepare is not supported.
+      definition: |
+        async prepareRename(
+          uri: string,
+          position: { line: number; character: number },
+        ): Promise<any | null>
+      location: src/lspClient.ts
+    - name: ApplyEditArgsSchema
+      description: Zod schema for apply_edit tool arguments
+      definition: |
+        export const ApplyEditArgsSchema = z.object({
+          workspace_edit: z.record(z.unknown()).describe(
+            "WorkspaceEdit object as returned by rename_symbol or format_document. " +
+            "Must contain either 'changes' (Record<uri, TextEdit[]>) or " +
+            "'documentChanges' (TextDocumentEdit[])."
+          ),
+        });
+      location: src/types/index.ts
+    - name: GoToDeclarationArgsSchema
+      description: Zod schema for go_to_declaration tool arguments
+      definition: |
+        export const GoToDeclarationArgsSchema = z.object({
+          file_path: z.string().describe("Path to the file containing the symbol"),
+          language_id: z.string().describe("The programming language the file is written in"),
+          line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+          column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+        });
+      location: src/types/index.ts
+    - name: PrepareRenameArgsSchema
+      description: Zod schema for prepare_rename tool arguments
+      definition: |
+        export const PrepareRenameArgsSchema = z.object({
+          file_path: z.string().describe("Path to the file containing the symbol"),
+          language_id: z.string().describe("The programming language the file is written in"),
+          line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+          column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+        });
+      location: src/types/index.ts
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are working in the LSP-MCP repo at /Users/dayna.blackwell/code/LSP-MCP.
+            This is a TypeScript MCP server that bridges LSP and MCP. Your job is to add
+            3 new LSP client methods and 1 client capability declaration to src/lspClient.ts.
+
+            IMPORTANT: The textDocument/didChange correctness fix is ALREADY implemented.
+            The openDocument() method at lines 561-583 of src/lspClient.ts already sends
+            didChange when the document is open. Do NOT modify openDocument().
+
+            ## What to implement
+
+            ### Step 1: Add `declaration: {}` client capability in initialize()
+
+            In the `initialize()` method, find this exact block in the capabilities object:
+
+            ```typescript
+                    references: {},
+                    definition: {},
+                    implementation: {},
+                    typeDefinition: {},
+            ```
+
+            Insert `declaration: {}` after `typeDefinition: {}`:
+
+            ```typescript
+                    references: {},
+                    definition: {},
+                    implementation: {},
+                    typeDefinition: {},
+                    declaration: {},
+            ```
+
+            ### Step 2: Add REQUEST_TIMEOUTS entries
+
+            In the `REQUEST_TIMEOUTS` static record, find this exact text:
+
+            ```typescript
+                "textDocument/rename": 30000,
+                "workspace/executeCommand": 30000,
+            ```
+
+            Add two new entries after `"workspace/executeCommand": 30000,`:
+
+            ```typescript
+                "textDocument/declaration": 30000,
+                "textDocument/prepareRename": 30000,
+            ```
+
+            ### Step 3: Add the 3 new methods
+
+            Insert all 3 new methods immediately before this exact comment in
+            src/lspClient.ts:
+
+            ```typescript
+              // Reopen a specific document to get latest content from disk
+            ```
+
+            Specifically, insert AFTER this exact closing block of executeCommand:
+
+            ```typescript
+                return null;
+              }
+
+              // Reopen a specific document to get latest content from disk
+            ```
+
+            Insert BEFORE `// Reopen a specific document` — that is, after the `}` that
+            closes `executeCommand`.
+
+            #### Method 1: applyWorkspaceEdit
+
+            This method applies a WorkspaceEdit directly to disk. It does NOT send
+            workspace/applyEdit to the LSP server (that is a server-initiated request).
+            Instead it reads files, applies edits, writes files, then sends didChange.
+
+            ```typescript
+              async applyWorkspaceEdit(workspaceEdit: any): Promise<void> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Applying workspace edit`);
+
+                // Collect all TextEdit arrays keyed by URI
+                const editsByUri: Map<string, Array<{ range: any; newText: string }>> = new Map();
+
+                if (workspaceEdit.documentChanges && Array.isArray(workspaceEdit.documentChanges)) {
+                  // TextDocumentEdit[] form
+                  for (const docEdit of workspaceEdit.documentChanges) {
+                    const uri = docEdit.textDocument?.uri ?? docEdit.uri;
+                    if (!uri) continue;
+                    const edits: Array<{ range: any; newText: string }> = editsByUri.get(uri) ?? [];
+                    edits.push(...(docEdit.edits ?? []));
+                    editsByUri.set(uri, edits);
+                  }
+                } else if (workspaceEdit.changes && typeof workspaceEdit.changes === 'object') {
+                  // Record<uri, TextEdit[]> form
+                  for (const [uri, edits] of Object.entries(workspaceEdit.changes)) {
+                    editsByUri.set(uri, edits as Array<{ range: any; newText: string }>);
+                  }
+                }
+
+                for (const [uri, edits] of editsByUri) {
+                  const filePath = uri.replace(/^file:\/\//, "");
+                  let content = await fs.readFile(filePath, "utf-8");
+                  const lines = content.split("\n");
+
+                  // Apply edits in reverse order (bottom-to-top) to preserve offsets
+                  const sortedEdits = [...edits].sort((a, b) => {
+                    const lineDiff = b.range.start.line - a.range.start.line;
+                    if (lineDiff !== 0) return lineDiff;
+                    return b.range.start.character - a.range.start.character;
+                  });
+
+                  for (const edit of sortedEdits) {
+                    const startLine = edit.range.start.line;
+                    const startChar = edit.range.start.character;
+                    const endLine = edit.range.end.line;
+                    const endChar = edit.range.end.character;
+
+                    const before = lines[startLine].slice(0, startChar);
+                    const after = lines[endLine].slice(endChar);
+                    const newLines = (before + edit.newText + after).split("\n");
+
+                    lines.splice(startLine, endLine - startLine + 1, ...newLines);
+                  }
+
+                  content = lines.join("\n");
+                  await fs.writeFile(filePath, content, "utf-8");
+                  debug(`Applied ${edits.length} edit(s) to ${filePath}`);
+
+                  // Notify LSP server of the change via didChange
+                  const languageId = this.fileLanguageIds.get(uri) ?? "plaintext";
+                  await this.openDocument(uri, content, languageId);
+                }
+              }
+            ```
+
+            #### Method 2: getDeclaration
+
+            Same pattern as getDefinition — normalizes LocationLink[] to Location[].
+
+            ```typescript
+              async getDeclaration(
+                uri: string,
+                position: { line: number; character: number },
+              ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Getting declaration at location: ${uri} (${position.line}:${position.character})`);
+
+                if (!this.serverCapabilities?.declarationProvider) {
+                  debug("Server does not declare declarationProvider capability — skipping declaration request");
+                  return [];
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("textDocument/declaration", {
+                    textDocument: { uri },
+                    position,
+                  });
+
+                  if (Array.isArray(response)) {
+                    // Normalize LocationLink[] to Location[] if needed
+                    return response.map((loc: any) => {
+                      if (loc.targetUri) {
+                        // LocationLink shape — map to Location
+                        return { uri: loc.targetUri, range: loc.targetRange };
+                      }
+                      return loc;
+                    });
+                  } else if (response && response.uri) {
+                    // Single Location
+                    return [response];
+                  }
+                } catch (err) {
+                  warning(`Error getting declaration: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return [];
+              }
+            ```
+
+            #### Method 3: prepareRename
+
+            Returns null if not supported; otherwise returns the raw server response.
+
+            ```typescript
+              async prepareRename(
+                uri: string,
+                position: { line: number; character: number },
+              ): Promise<any | null> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Preparing rename at: ${uri} (${position.line}:${position.character})`);
+
+                // prepareRename requires renameProvider to be an object with prepareProvider
+                const renameProvider = this.serverCapabilities?.renameProvider;
+                if (!renameProvider) {
+                  debug("Server does not declare renameProvider capability — skipping prepareRename request");
+                  return null;
+                }
+                if (typeof renameProvider !== 'object' || !renameProvider.prepareProvider) {
+                  debug("Server renameProvider does not support prepareProvider — skipping prepareRename request");
+                  return null;
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("textDocument/prepareRename", {
+                    textDocument: { uri },
+                    position,
+                  });
+
+                  return response ?? null;
+                } catch (err) {
+                  warning(`Error preparing rename: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return null;
+              }
+            ```
+
+            ### Step 4: Update rename capability in initialize() to enable prepareSupport
+
+            In the initialize() capabilities, find this exact text:
+
+            ```typescript
+                    rename: {
+                      prepareSupport: false,
+                    },
+            ```
+
+            Change it to:
+
+            ```typescript
+                    rename: {
+                      prepareSupport: true,
+                    },
+            ```
+
+            ## Verification gate
+
+            1. Build passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npm run build
+               ```
+               Expected: exit 0, no TypeScript errors.
+
+            2. Type check passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npx tsc --noEmit
+               ```
+               Expected: exit 0.
+
+            3. Postcondition — 3 new methods exist:
+               ```
+               grep -c "async applyWorkspaceEdit\|async getDeclaration\|async prepareRename" /Users/dayna.blackwell/code/LSP-MCP/src/lspClient.ts
+               ```
+               Expected output: 3
+
+            4. Postcondition — declaration capability added:
+               ```
+               grep -c "declaration: {}" /Users/dayna.blackwell/code/LSP-MCP/src/lspClient.ts
+               ```
+               Expected output: 1
+
+            5. Postcondition — prepareSupport changed to true:
+               ```
+               grep "prepareSupport" /Users/dayna.blackwell/code/LSP-MCP/src/lspClient.ts
+               ```
+               Expected output: `prepareSupport: true,`
+
+            6. Postcondition — REQUEST_TIMEOUTS has new entries:
+               ```
+               grep -c "textDocument/declaration\|textDocument/prepareRename" /Users/dayna.blackwell/code/LSP-MCP/src/lspClient.ts
+               ```
+               Expected output: 4 (one timeout entry + one sendRequest call for each of declaration and prepareRename)
+
+            7. Postcondition — openDocument NOT modified (didChange already works):
+               ```
+               grep -c "textDocument/didChange" /Users/dayna.blackwell/code/LSP-MCP/src/lspClient.ts
+               ```
+               Expected output: 1 (unchanged — already exists at the existing location)
+
+            ## Constraints
+
+            - Do NOT modify src/types/index.ts — that file is owned by Agent B.
+            - Do NOT modify src/tools/index.ts — that file is owned by Agent B.
+            - Do NOT modify openDocument() — the didChange logic is already present.
+            - Do NOT send workspace/applyEdit to the LSP server in applyWorkspaceEdit().
+              The method applies edits directly via file I/O, then calls openDocument()
+              to send the didChange notification.
+            - applyWorkspaceEdit uses `fs` (already imported as `import * as fs from "fs/promises"`)
+              — no new imports needed.
+            - Insert the 3 new methods in order: applyWorkspaceEdit, getDeclaration,
+              prepareRename — all immediately before the `// Reopen a specific document`
+              comment.
+            - The rename.prepareSupport must be changed from false to true so that
+              gopls sends prepare responses when prepareRename is called.
+          files:
+            - src/lspClient.ts
+          context_source: prepared-brief
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## Context
+
+            You are working in the LSP-MCP repo at /Users/dayna.blackwell/code/LSP-MCP.
+            This is a TypeScript MCP server that bridges LSP and MCP. Your job is to add
+            3 new Zod schemas to src/types/index.ts and 3 new tool handlers + definitions
+            to src/tools/index.ts.
+
+            The LSPClient methods you will call were added by Agent A in Wave 1.
+            The method signatures are binding contracts — use them exactly as specified.
+
+            ## LSPClient method signatures (from Agent A)
+
+            ```typescript
+            // In LSPClient class (src/lspClient.ts):
+            async applyWorkspaceEdit(workspaceEdit: any): Promise<void>
+            async getDeclaration(uri: string, position: { line: number; character: number }): Promise<Array<{uri: string; range: {...}}>>
+            async prepareRename(uri: string, position: { line: number; character: number }): Promise<any | null>
+            ```
+
+            ## Step 1: Add schemas to src/types/index.ts
+
+            Add the following 3 schemas at the END of src/types/index.ts, after the existing
+            `ExecuteCommandArgsSchema`. Append after this exact closing text:
+
+            ```typescript
+            export const ExecuteCommandArgsSchema = z.object({
+              command: z.string().describe("The command identifier to execute (from a code action's command field)"),
+              args: z.array(z.unknown()).optional().describe("Optional arguments to pass to the command"),
+            });
+            ```
+
+            Add immediately after the closing `});`:
+
+            ```typescript
+            export const ApplyEditArgsSchema = z.object({
+              workspace_edit: z.record(z.unknown()).describe(
+                "WorkspaceEdit object as returned by rename_symbol or format_document. " +
+                "Must contain either 'changes' (Record<uri, TextEdit[]>) or " +
+                "'documentChanges' (TextDocumentEdit[])."
+              ),
+            });
+
+            export const GoToDeclarationArgsSchema = z.object({
+              file_path: z.string().describe("Path to the file containing the symbol"),
+              language_id: z.string().describe("The programming language the file is written in"),
+              line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+              column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+            });
+
+            export const PrepareRenameArgsSchema = z.object({
+              file_path: z.string().describe("Path to the file containing the symbol"),
+              language_id: z.string().describe("The programming language the file is written in"),
+              line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+              column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+            });
+            ```
+
+            ## Step 2: Expand imports in src/tools/index.ts
+
+            Find this import statement at the top of src/tools/index.ts:
+
+            ```typescript
+            import {
+              GetInfoOnLocationArgsSchema,
+              GetCompletionsArgsSchema,
+              GetCodeActionsArgsSchema,
+              GetReferencesArgsSchema,
+              StartLspArgsSchema,
+              OpenDocumentArgsSchema,
+              CloseDocumentArgsSchema,
+              GetDiagnosticsArgsSchema,
+              SetLogLevelArgsSchema,
+              GoToDefinitionArgsSchema,
+              GetDocumentSymbolsArgsSchema,
+              GetWorkspaceSymbolsArgsSchema,
+              GetSignatureHelpArgsSchema,
+              FormatDocumentArgsSchema,
+              RenameSymbolArgsSchema,
+              GoToTypeDefinitionArgsSchema,
+              GoToImplementationArgsSchema,
+              ExecuteCommandArgsSchema,
+              ToolInput,
+              ToolHandler
+            } from "../types/index.js";
+            ```
+
+            Replace it with:
+
+            ```typescript
+            import {
+              GetInfoOnLocationArgsSchema,
+              GetCompletionsArgsSchema,
+              GetCodeActionsArgsSchema,
+              GetReferencesArgsSchema,
+              StartLspArgsSchema,
+              OpenDocumentArgsSchema,
+              CloseDocumentArgsSchema,
+              GetDiagnosticsArgsSchema,
+              SetLogLevelArgsSchema,
+              GoToDefinitionArgsSchema,
+              GetDocumentSymbolsArgsSchema,
+              GetWorkspaceSymbolsArgsSchema,
+              GetSignatureHelpArgsSchema,
+              FormatDocumentArgsSchema,
+              RenameSymbolArgsSchema,
+              GoToTypeDefinitionArgsSchema,
+              GoToImplementationArgsSchema,
+              ExecuteCommandArgsSchema,
+              ApplyEditArgsSchema,
+              GoToDeclarationArgsSchema,
+              PrepareRenameArgsSchema,
+              ToolInput,
+              ToolHandler
+            } from "../types/index.js";
+            ```
+
+            ## Step 3: Add handler functions to src/tools/index.ts
+
+            Add 3 new named handler functions AFTER handleExecuteCommand and BEFORE the
+            `// Define handlers for each tool` comment.
+
+            Find this exact text (end of handleExecuteCommand):
+
+            ```typescript
+              const text = result !== null ? JSON.stringify(result, null, 2) : "Command executed successfully (no result returned)";
+              debug(`Execute command result: ${text.slice(0, 100)}`);
+              return { content: [{ type: "text", text }] };
+            }
+
+            // Define handlers for each tool
+            ```
+
+            Insert the 3 new handlers after the closing `}` of handleExecuteCommand, before
+            the `// Define handlers for each tool` comment:
+
+            ```typescript
+            async function handleApplyEdit(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof ApplyEditArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Applying workspace edit`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              await lspClient!.applyWorkspaceEdit(args.workspace_edit);
+              return { content: [{ type: "text", text: "Workspace edit applied successfully" }] };
+            }
+
+            async function handleGoToDeclaration(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof GoToDeclarationArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Getting declaration in file: ${args.file_path} (${args.line}:${args.column})`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const fileContent = await fs.readFile(args.file_path, 'utf-8');
+              const fileUri = createFileUri(args.file_path);
+              await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+              const locations = await lspClient!.getDeclaration(fileUri, {
+                line: args.line - 1,
+                character: args.column - 1
+              });
+              const formatted = locations.map((loc: any) => ({
+                file: loc.uri.replace(/^file:\/\//, ""),
+                line: loc.range.start.line + 1,
+                column: loc.range.start.character + 1,
+                end_line: loc.range.end.line + 1,
+                end_column: loc.range.end.character + 1,
+              }));
+              debug(`Found ${formatted.length} declaration location(s)`);
+              return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+            }
+
+            async function handlePrepareRename(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof PrepareRenameArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Preparing rename in file: ${args.file_path} (${args.line}:${args.column})`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const fileContent = await fs.readFile(args.file_path, 'utf-8');
+              const fileUri = createFileUri(args.file_path);
+              await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+              const result = await lspClient!.prepareRename(fileUri, {
+                line: args.line - 1,
+                character: args.column - 1
+              });
+              const text = result !== null
+                ? JSON.stringify(result, null, 2)
+                : "Rename not supported at this position";
+              debug(`Prepare rename result: ${text.slice(0, 100)}`);
+              return { content: [{ type: "text", text }] };
+            }
+            ```
+
+            ## Step 4: Register handlers in getToolHandlers
+
+            In the `getToolHandlers` function, find the closing of the return object. The
+            last entry currently is execute_command:
+
+            ```typescript
+                "execute_command": {
+                  schema: ExecuteCommandArgsSchema,
+                  handler: (args: any) => handleExecuteCommand(getLspClient, args),
+                },
+              };
+            };
+            ```
+
+            Replace those last two closing lines (`};` and `};`) with:
+
+            ```typescript
+                "execute_command": {
+                  schema: ExecuteCommandArgsSchema,
+                  handler: (args: any) => handleExecuteCommand(getLspClient, args),
+                },
+                "apply_edit": {
+                  schema: ApplyEditArgsSchema,
+                  handler: (args: any) => handleApplyEdit(getLspClient, args),
+                },
+                "go_to_declaration": {
+                  schema: GoToDeclarationArgsSchema,
+                  handler: (args: any) => handleGoToDeclaration(getLspClient, args),
+                },
+                "prepare_rename": {
+                  schema: PrepareRenameArgsSchema,
+                  handler: (args: any) => handlePrepareRename(getLspClient, args),
+                },
+              };
+            };
+            ```
+
+            ## Step 5: Add tool definitions in getToolDefinitions
+
+            In `getToolDefinitions`, find the closing of the return array. The last entry
+            currently is execute_command:
+
+            ```typescript
+                {
+                  name: "execute_command",
+                  description: "Execute a workspace command via LSP. Commands are server-defined identifiers returned by code actions (in the command field of a CodeAction). Use this after get_code_actions to trigger a server-side operation such as applying a refactoring, generating code, or running a server-specific action. Returns the server-defined result or null.",
+                  inputSchema: zodToJsonSchema(ExecuteCommandArgsSchema) as ToolInput,
+                },
+              ];
+            };
+            ```
+
+            Replace those last two closing lines (`];` and `};`) with:
+
+            ```typescript
+                {
+                  name: "execute_command",
+                  description: "Execute a workspace command via LSP. Commands are server-defined identifiers returned by code actions (in the command field of a CodeAction). Use this after get_code_actions to trigger a server-side operation such as applying a refactoring, generating code, or running a server-specific action. Returns the server-defined result or null.",
+                  inputSchema: zodToJsonSchema(ExecuteCommandArgsSchema) as ToolInput,
+                },
+                {
+                  name: "apply_edit",
+                  description: "Apply a WorkspaceEdit to the workspace by writing file changes to disk. Pass the WorkspaceEdit object returned by rename_symbol or format_document. Edits are applied in reverse order to preserve offsets, then the LSP server is notified of each changed file via didChange. Use this after inspecting the edit returned by rename_symbol or format_document to commit the changes.",
+                  inputSchema: zodToJsonSchema(ApplyEditArgsSchema) as ToolInput,
+                },
+                {
+                  name: "go_to_declaration",
+                  description: "Jump to the declaration of a symbol at a specific location in a file via LSP. Completes the 'go to X' family alongside go_to_definition, go_to_type_definition, and go_to_implementation. Most useful for languages with separate declaration and definition (e.g., C/C++ header files). Returns the file path and position where the symbol is declared.",
+                  inputSchema: zodToJsonSchema(GoToDeclarationArgsSchema) as ToolInput,
+                },
+                {
+                  name: "prepare_rename",
+                  description: "Validate that a rename is possible at the given position before committing to rename_symbol. Returns the range that would be renamed and a placeholder name suggestion, or a message indicating rename is not supported at this position. Use this before rename_symbol to avoid attempting invalid renames. Returns null if the server does not support prepareRename.",
+                  inputSchema: zodToJsonSchema(PrepareRenameArgsSchema) as ToolInput,
+                },
+              ];
+            };
+            ```
+
+            ## Verification gate
+
+            1. Build passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npm run build
+               ```
+               Expected: exit 0, no TypeScript errors.
+
+            2. Type check passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npx tsc --noEmit
+               ```
+               Expected: exit 0.
+
+            3. Postcondition — 3 new schemas added to types/index.ts:
+               ```
+               grep -c "ArgsSchema = z.object" /Users/dayna.blackwell/code/LSP-MCP/src/types/index.ts
+               ```
+               Expected output: 21 (18 existing + 3 new)
+
+            4. Postcondition — 3 new handlers in tools/index.ts:
+               ```
+               grep -c "^async function handle" /Users/dayna.blackwell/code/LSP-MCP/src/tools/index.ts
+               ```
+               Expected output: 22 (19 existing + 3 new)
+
+            5. Postcondition — 3 new tool names registered (each appears twice: handler + definition):
+               ```
+               grep -c '"apply_edit"\|"go_to_declaration"\|"prepare_rename"' /Users/dayna.blackwell/code/LSP-MCP/src/tools/index.ts
+               ```
+               Expected output: 6
+
+            6. Run tools unit test:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npm run test:tools
+               ```
+               Expected: All tests pass.
+
+            ## Constraints
+
+            - Do NOT modify src/lspClient.ts — that file is owned by Agent A.
+            - Do NOT modify index.ts — no wiring changes needed. Tool handlers are
+              auto-discovered via getToolHandlers(); no registration needed in index.ts.
+            - handleApplyEdit does NOT call openDocument before calling applyWorkspaceEdit.
+              The applyWorkspaceEdit method handles its own file reading and didChange
+              notifications internally.
+            - handleApplyEdit passes `args.workspace_edit` directly to applyWorkspaceEdit —
+              it is already the WorkspaceEdit object (not a file path or URI).
+            - The tool name for apply_edit must be `apply_edit` (not `workspace_apply_edit`
+              or `apply_workspace_edit`).
+            - Match the exact existing handler function signature pattern:
+              `async function handleXxx(getLspClient: () => LSPClient | null, args: z.infer<typeof XxxSchema>)`
+            - The postcondition schema count check expects 21. If your count differs,
+              verify with `grep -c "ArgsSchema = z.object" src/types/index.ts` before
+              writing the postcondition check results.
+          files:
+            - src/types/index.ts
+            - src/tools/index.ts
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: npm run build
+          required: true
+          repo: LSP-MCP
+        - type: typecheck
+          command: npx tsc --noEmit
+          required: true
+          repo: LSP-MCP
+        - type: test
+          command: npm test
+          required: true
+          repo: LSP-MCP
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent A modifies openDocument() thinking the didChange fix is still needed,
+            breaking the existing logic that already correctly sends didChange.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent A's brief explicitly states "The textDocument/didChange correctness fix
+            is ALREADY implemented. Do NOT modify openDocument()." Postcondition 7 verifies
+            the didChange count is unchanged (1 occurrence).
+        - scenario: |-
+            Agent A sends workspace/applyEdit to the LSP server in applyWorkspaceEdit()
+            instead of applying edits directly via file I/O. workspace/applyEdit is a
+            server-initiated request — sending it from the client is protocol-incorrect.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Agent A's brief explicitly states "This method applies a WorkspaceEdit directly
+            to disk. It does NOT send workspace/applyEdit to the LSP server." The method
+            implementation is specified verbatim and uses fs.readFile/fs.writeFile.
+        - scenario: |-
+            Agent A adds declaration: {} inside a nested object (e.g., inside workspace:{})
+            rather than inside textDocument:{}, mis-placing the client capability.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent A's brief provides exact context lines showing declaration: {} goes after
+            typeDefinition: {} inside the textDocument block, where references/definition/
+            implementation/typeDefinition are all listed.
+        - scenario: |-
+            Agent B's postcondition schema count check expects the wrong number. Prior IMPL
+            had 18 schemas; this wave adds 3 more for an expected total of 21. If the file
+            has a different count, the check fails or produces a false pass.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent B's brief specifies "21 (18 existing + 3 new)" and instructs the agent
+            to verify with grep before writing results if uncertain.
+        - scenario: |-
+            Agent B's handleApplyEdit calls openDocument() before applyWorkspaceEdit(),
+            copying the pattern from other handlers — but applyWorkspaceEdit handles its
+            own file I/O and openDocument calls internally, causing double didChange.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent B's brief explicitly states "handleApplyEdit does NOT call openDocument
+            before calling applyWorkspaceEdit." The handler is specified verbatim in the
+            brief without an openDocument call.
+        - scenario: |-
+            Agent B names the apply_edit tool `apply_workspace_edit` or `workspace_apply_edit`
+            instead of `apply_edit`, breaking the expected MCP tool API.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent B's brief explicitly states "The tool name for apply_edit must be
+            `apply_edit` (not `workspace_apply_edit` or `apply_workspace_edit`)."
+state: "REVIEWED"
+injection_method: hook
