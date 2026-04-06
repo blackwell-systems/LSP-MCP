@@ -33,6 +33,9 @@ import { LSPClient } from "../lspClient.js";
 import { debug, info, error, notice, warning, setLogLevel } from "../logging/index.js";
 import { activateExtension } from "../extensions/index.js";
 import { waitForDiagnostics } from "../shared/waitForDiagnostics.js";
+import { createFileUri, checkLspClientInitialized, uriToFilePath } from "../shared/utils.js";
+
+export { createFileUri, checkLspClientInitialized } from "../shared/utils.js";
 
 const RestartLspArgsSchema = z.object({
   root_dir: z.string().optional().describe(
@@ -40,17 +43,20 @@ const RestartLspArgsSchema = z.object({
   ),
 });
 
-// Create a file URI from a file path
-export const createFileUri = (filePath: string): string => {
-  return `file://${path.resolve(filePath)}`;
-};
-
-// Check if LSP client is initialized
-export const checkLspClientInitialized = (lspClient: LSPClient | null): void => {
-  if (!lspClient) {
-    throw new Error("LSP server not ready yet – initialization is still in progress or failed.");
-  }
-};
+// Helper: open a document and run an LSP operation in a single step
+async function withDocument<T>(
+  getLspClient: () => LSPClient | null,
+  filePath: string,
+  languageId: string,
+  callback: (lspClient: LSPClient, fileUri: string) => Promise<T>,
+): Promise<T> {
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(filePath, "utf-8");
+  const fileUri = createFileUri(filePath);
+  await lspClient!.openDocument(fileUri, fileContent, languageId);
+  return callback(lspClient!, fileUri);
+}
 
 // Named handler functions
 async function handleGetInfoOnLocation(
@@ -58,17 +64,14 @@ async function handleGetInfoOnLocation(
   args: z.infer<typeof GetInfoOnLocationArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting info on location in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const text = await lspClient!.getInfoOnLocation(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const text = await lspClient.getInfoOnLocation(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    debug(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
+    return { content: [{ type: "text", text }] };
   });
-  debug(`Returned info on location: ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`);
-  return { content: [{ type: "text", text }] };
 }
 
 async function handleGetCompletions(
@@ -76,17 +79,14 @@ async function handleGetCompletions(
   args: z.infer<typeof GetCompletionsArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting completions in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const completions = await lspClient!.getCompletion(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const completions = await lspClient.getCompletion(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    debug(`Returned ${completions.length} completions`);
+    return { content: [{ type: "text", text: JSON.stringify(completions, null, 2) }] };
   });
-  debug(`Returned ${completions.length} completions`);
-  return { content: [{ type: "text", text: JSON.stringify(completions, null, 2) }] };
 }
 
 async function handleGetCodeActions(
@@ -94,23 +94,20 @@ async function handleGetCodeActions(
   args: z.infer<typeof GetCodeActionsArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting code actions in file: ${args.file_path} (${args.start_line}:${args.start_column} to ${args.end_line}:${args.end_column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const codeActions = await lspClient!.getCodeActions(fileUri, {
-    start: {
-      line: args.start_line - 1,
-      character: args.start_column - 1
-    },
-    end: {
-      line: args.end_line - 1,
-      character: args.end_column - 1
-    }
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const codeActions = await lspClient.getCodeActions(fileUri, {
+      start: {
+        line: args.start_line - 1,
+        character: args.start_column - 1
+      },
+      end: {
+        line: args.end_line - 1,
+        character: args.end_column - 1
+      }
+    });
+    debug(`Returned ${codeActions.length} code actions`);
+    return { content: [{ type: "text", text: JSON.stringify(codeActions, null, 2) }] };
   });
-  debug(`Returned ${codeActions.length} code actions`);
-  return { content: [{ type: "text", text: JSON.stringify(codeActions, null, 2) }] };
 }
 
 async function handleOpenDocument(
@@ -241,25 +238,22 @@ async function handleGetReferences(
   args: z.infer<typeof GetReferencesArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting references in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const refs = await lspClient!.getReferences(
-    fileUri,
-    { line: args.line - 1, character: args.column - 1 },
-    args.include_declaration ?? false,
-  );
-  const formatted = refs.map((loc: any) => ({
-    file: loc.uri.replace(/^file:\/\//, ""),
-    line: loc.range.start.line + 1,
-    column: loc.range.start.character + 1,
-    end_line: loc.range.end.line + 1,
-    end_column: loc.range.end.character + 1,
-  }));
-  debug(`Found ${formatted.length} references`);
-  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const refs = await lspClient.getReferences(
+      fileUri,
+      { line: args.line - 1, character: args.column - 1 },
+      args.include_declaration ?? false,
+    );
+    const formatted = refs.map((loc: any) => ({
+      file: uriToFilePath(loc.uri),
+      line: loc.range.start.line + 1,
+      column: loc.range.start.character + 1,
+      end_line: loc.range.end.line + 1,
+      end_column: loc.range.end.character + 1,
+    }));
+    debug(`Found ${formatted.length} references`);
+    return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+  });
 }
 
 async function handleSetLogLevel(
@@ -286,24 +280,21 @@ async function handleGoToDefinition(
   args: z.infer<typeof GoToDefinitionArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting definition in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const locations = await lspClient!.getDefinition(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const locations = await lspClient.getDefinition(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    const formatted = locations.map((loc: any) => ({
+      file: uriToFilePath(loc.uri),
+      line: loc.range.start.line + 1,
+      column: loc.range.start.character + 1,
+      end_line: loc.range.end.line + 1,
+      end_column: loc.range.end.character + 1,
+    }));
+    debug(`Found ${formatted.length} definition location(s)`);
+    return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
   });
-  const formatted = locations.map((loc: any) => ({
-    file: loc.uri.replace(/^file:\/\//, ""),
-    line: loc.range.start.line + 1,
-    column: loc.range.start.character + 1,
-    end_line: loc.range.end.line + 1,
-    end_column: loc.range.end.character + 1,
-  }));
-  debug(`Found ${formatted.length} definition location(s)`);
-  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
 }
 
 async function handleGetDocumentSymbols(
@@ -311,14 +302,11 @@ async function handleGetDocumentSymbols(
   args: z.infer<typeof GetDocumentSymbolsArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting document symbols for: ${args.file_path}`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const symbols = await lspClient!.getDocumentSymbols(fileUri);
-  debug(`Found ${symbols.length} document symbol(s)`);
-  return { content: [{ type: "text", text: JSON.stringify(symbols, null, 2) }] };
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const symbols = await lspClient.getDocumentSymbols(fileUri);
+    debug(`Found ${symbols.length} document symbol(s)`);
+    return { content: [{ type: "text", text: JSON.stringify(symbols, null, 2) }] };
+  });
 }
 
 async function handleGetWorkspaceSymbols(
@@ -338,18 +326,15 @@ async function handleGetSignatureHelp(
   args: z.infer<typeof GetSignatureHelpArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting signature help in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const result = await lspClient!.getSignatureHelp(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const result = await lspClient.getSignatureHelp(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    const text = result !== null ? JSON.stringify(result, null, 2) : "No signature help available at this location";
+    debug(`Signature help result: ${text.slice(0, 100)}`);
+    return { content: [{ type: "text", text }] };
   });
-  const text = result !== null ? JSON.stringify(result, null, 2) : "No signature help available at this location";
-  debug(`Signature help result: ${text.slice(0, 100)}`);
-  return { content: [{ type: "text", text }] };
 }
 
 async function handleFormatDocument(
@@ -357,17 +342,14 @@ async function handleFormatDocument(
   args: z.infer<typeof FormatDocumentArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Formatting document: ${args.file_path}`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const edits = await lspClient!.formatDocument(fileUri, {
-    tabSize: args.tab_size,
-    insertSpaces: args.insert_spaces,
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const edits = await lspClient.formatDocument(fileUri, {
+      tabSize: args.tab_size,
+      insertSpaces: args.insert_spaces,
+    });
+    debug(`Format document returned ${edits.length} edit(s)`);
+    return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
   });
-  debug(`Format document returned ${edits.length} edit(s)`);
-  return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
 }
 
 async function handleFormatRange(
@@ -375,21 +357,18 @@ async function handleFormatRange(
   args: z.infer<typeof FormatRangeArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Range-formatting: ${args.file_path} [${args.start_line}:${args.start_column}-${args.end_line}:${args.end_column}]`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const edits = await lspClient!.formatRange(
-    fileUri,
-    {
-      start: { line: args.start_line - 1, character: args.start_column - 1 },
-      end: { line: args.end_line - 1, character: args.end_column - 1 },
-    },
-    { tabSize: args.tab_size, insertSpaces: args.insert_spaces },
-  );
-  debug(`Format range returned ${edits.length} edit(s)`);
-  return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const edits = await lspClient.formatRange(
+      fileUri,
+      {
+        start: { line: args.start_line - 1, character: args.start_column - 1 },
+        end: { line: args.end_line - 1, character: args.end_column - 1 },
+      },
+      { tabSize: args.tab_size, insertSpaces: args.insert_spaces },
+    );
+    debug(`Format range returned ${edits.length} edit(s)`);
+    return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
+  });
 }
 
 async function handleDidChangeWatchedFiles(
@@ -408,21 +387,18 @@ async function handleRenameSymbol(
   args: z.infer<typeof RenameSymbolArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Renaming symbol in file: ${args.file_path} (${args.line}:${args.column}) to "${args.new_name}"`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const workspaceEdit = await lspClient!.renameSymbol(
-    fileUri,
-    { line: args.line - 1, character: args.column - 1 },
-    args.new_name,
-  );
-  const text = workspaceEdit !== null
-    ? JSON.stringify(workspaceEdit, null, 2)
-    : "Rename not supported or symbol cannot be renamed at this location";
-  debug(`Rename symbol result: ${text.slice(0, 100)}`);
-  return { content: [{ type: "text", text }] };
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const workspaceEdit = await lspClient.renameSymbol(
+      fileUri,
+      { line: args.line - 1, character: args.column - 1 },
+      args.new_name,
+    );
+    const text = workspaceEdit !== null
+      ? JSON.stringify(workspaceEdit, null, 2)
+      : "Rename not supported or symbol cannot be renamed at this location";
+    debug(`Rename symbol result: ${text.slice(0, 100)}`);
+    return { content: [{ type: "text", text }] };
+  });
 }
 
 async function handleGoToTypeDefinition(
@@ -430,24 +406,21 @@ async function handleGoToTypeDefinition(
   args: z.infer<typeof GoToTypeDefinitionArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting type definition in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const locations = await lspClient!.getTypeDefinition(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const locations = await lspClient.getTypeDefinition(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    const formatted = locations.map((loc: any) => ({
+      file: uriToFilePath(loc.uri),
+      line: loc.range.start.line + 1,
+      column: loc.range.start.character + 1,
+      end_line: loc.range.end.line + 1,
+      end_column: loc.range.end.character + 1,
+    }));
+    debug(`Found ${formatted.length} type definition location(s)`);
+    return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
   });
-  const formatted = locations.map((loc: any) => ({
-    file: loc.uri.replace(/^file:\/\//, ""),
-    line: loc.range.start.line + 1,
-    column: loc.range.start.character + 1,
-    end_line: loc.range.end.line + 1,
-    end_column: loc.range.end.character + 1,
-  }));
-  debug(`Found ${formatted.length} type definition location(s)`);
-  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
 }
 
 async function handleGoToImplementation(
@@ -455,24 +428,21 @@ async function handleGoToImplementation(
   args: z.infer<typeof GoToImplementationArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting implementation in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const locations = await lspClient!.getImplementation(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const locations = await lspClient.getImplementation(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    const formatted = locations.map((loc: any) => ({
+      file: uriToFilePath(loc.uri),
+      line: loc.range.start.line + 1,
+      column: loc.range.start.character + 1,
+      end_line: loc.range.end.line + 1,
+      end_column: loc.range.end.character + 1,
+    }));
+    debug(`Found ${formatted.length} implementation location(s)`);
+    return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
   });
-  const formatted = locations.map((loc: any) => ({
-    file: loc.uri.replace(/^file:\/\//, ""),
-    line: loc.range.start.line + 1,
-    column: loc.range.start.character + 1,
-    end_line: loc.range.end.line + 1,
-    end_column: loc.range.end.character + 1,
-  }));
-  debug(`Found ${formatted.length} implementation location(s)`);
-  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
 }
 
 async function handleExecuteCommand(
@@ -504,24 +474,21 @@ async function handleGoToDeclaration(
   args: z.infer<typeof GoToDeclarationArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Getting declaration in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const locations = await lspClient!.getDeclaration(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const locations = await lspClient.getDeclaration(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    const formatted = locations.map((loc: any) => ({
+      file: uriToFilePath(loc.uri),
+      line: loc.range.start.line + 1,
+      column: loc.range.start.character + 1,
+      end_line: loc.range.end.line + 1,
+      end_column: loc.range.end.character + 1,
+    }));
+    debug(`Found ${formatted.length} declaration location(s)`);
+    return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
   });
-  const formatted = locations.map((loc: any) => ({
-    file: loc.uri.replace(/^file:\/\//, ""),
-    line: loc.range.start.line + 1,
-    column: loc.range.start.character + 1,
-    end_line: loc.range.end.line + 1,
-    end_column: loc.range.end.character + 1,
-  }));
-  debug(`Found ${formatted.length} declaration location(s)`);
-  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
 }
 
 async function handlePrepareRename(
@@ -529,24 +496,21 @@ async function handlePrepareRename(
   args: z.infer<typeof PrepareRenameArgsSchema>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   debug(`Preparing rename in file: ${args.file_path} (${args.line}:${args.column})`);
-  const lspClient = getLspClient();
-  checkLspClientInitialized(lspClient);
-  const fileContent = await fs.readFile(args.file_path, 'utf-8');
-  const fileUri = createFileUri(args.file_path);
-  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
-  const result = await lspClient!.prepareRename(fileUri, {
-    line: args.line - 1,
-    character: args.column - 1
+  return withDocument(getLspClient, args.file_path, args.language_id, async (lspClient, fileUri) => {
+    const result = await lspClient.prepareRename(fileUri, {
+      line: args.line - 1,
+      character: args.column - 1
+    });
+    const text = result !== null
+      ? JSON.stringify(result, null, 2)
+      : "Rename not supported at this position";
+    debug(`Prepare rename result: ${text.slice(0, 100)}`);
+    return { content: [{ type: "text", text }] };
   });
-  const text = result !== null
-    ? JSON.stringify(result, null, 2)
-    : "Rename not supported at this position";
-  debug(`Prepare rename result: ${text.slice(0, 100)}`);
-  return { content: [{ type: "text", text }] };
 }
 
 // Define handlers for each tool
-export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerPath: string, lspServerArgs: string[], setLspClient: (client: LSPClient) => void, rootDir: string, setRootDir: (dir: string) => void, server?: any) => {
+export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerPath: string, lspServerArgs: string[], setLspClient: (client: LSPClient) => void, rootDir: string, setRootDir: (dir: string) => void) => {
   return {
     "get_info_on_location": {
       schema: GetInfoOnLocationArgsSchema,
