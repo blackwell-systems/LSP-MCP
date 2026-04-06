@@ -193,6 +193,8 @@ lsp-mcp is implemented directly against the [LSP 3.17 specification](https://mic
 
 See [docs/lsp-conformance.md](./docs/lsp-conformance.md) for the full method coverage matrix and spec section references.
 
+See [docs/tools.md](./docs/tools.md) for the full tool reference with example inputs and outputs.
+
 See [docs/architecture.md](./docs/architecture.md) for the internal layer structure, `withDocument` pattern, URI handling, and resource subscription internals.
 
 ## Extensions
