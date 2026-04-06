@@ -264,7 +264,7 @@ async function testGetDocumentSymbols(client, lang) {
   try {
     const result = await client.callTool({
       name: 'get_document_symbols',
-      arguments: { file_path: lang.file },
+      arguments: { file_path: lang.file, language_id: lang.id },
     });
     let arr;
     try {
@@ -303,10 +303,11 @@ async function testGoToDefinition(client, lang) {
     assert(loc !== null && loc !== undefined, 'go_to_definition returned null');
     const first = Array.isArray(loc) ? loc[0] : loc;
     assert(first, 'go_to_definition returned empty array');
-    const uri = first.uri || first.targetUri || '';
-    assert(uri.length > 0, 'go_to_definition result has no uri');
-    const startLine = first.range ? first.range.start.line : (first.targetRange ? first.targetRange.start.line : -1);
-    assert(Math.abs(startLine - (lang.definitionLine - 1)) <= 1, `go_to_definition line mismatch: got ${startLine}, expected ~${lang.definitionLine - 1}`);
+    // handler returns { file, line, column } format
+    const file = first.file || first.uri || first.targetUri || '';
+    assert(file.length > 0, 'go_to_definition result has no file');
+    const startLine = first.line != null ? first.line : (first.range ? first.range.start.line + 1 : -1);
+    assert(Math.abs(startLine - lang.definitionLine) <= 1, `go_to_definition line mismatch: got ${startLine}, expected ~${lang.definitionLine}`);
     return { tool: 'go_to_definition', status: 'pass', detail: 'found definition' };
   } catch (err) {
     return { tool: 'go_to_definition', status: 'fail', detail: err.message };
@@ -448,8 +449,9 @@ async function testGoToDeclaration(client, lang) {
     assert(loc !== null && loc !== undefined, 'go_to_declaration returned null');
     const first = Array.isArray(loc) ? loc[0] : loc;
     assert(first, 'go_to_declaration returned empty array');
-    const uri = first.uri || first.targetUri || '';
-    assert(uri.endsWith('person.h'), `go_to_declaration uri does not end with 'person.h': ${uri}`);
+    // handler returns { file, line, column } format
+    const file = first.file || first.uri || first.targetUri || '';
+    assert(file.endsWith('person.h'), `go_to_declaration file does not end with 'person.h': ${file}`);
     return { tool: 'go_to_declaration', status: 'pass', detail: 'found declaration in person.h' };
   } catch (err) {
     return { tool: 'go_to_declaration', status: 'fail', detail: err.message };
@@ -525,8 +527,9 @@ async function testLanguage(lang) {
     });
     assert(startResult.content && startResult.content.length > 0, 'start_lsp returned no content');
 
-    // Wait for LSP to initialize
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    // Wait for LSP to initialize (jdtls needs ~90s; others need ~4s)
+    const initWait = lang.id === 'java' ? 90000 : 4000;
+    await new Promise(resolve => setTimeout(resolve, initWait));
 
     // 2. open_document
     console.log(`[${lang.name}] Calling open_document (${lang.file})`);
