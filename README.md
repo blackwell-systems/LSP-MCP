@@ -17,7 +17,7 @@ Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server
 
 Designed for agentic workflows where correctness, persistence, and cross-language reliability are required.
 
-The LSP layer agents can actually rely on.
+The LSP layer built for long-running agentic workflows.
 
 **Token efficiency (critical for LLM agents):** Language servers maintain a pre-built index of the entire workspace. Instead of loading files into context to find usages, trace types, or locate definitions, agents query the index directly — `get_references` returns the 12 call sites without pasting 5 files, `get_info_on_location` returns the type signature at one position without loading the module, `get_diagnostics` returns only the errors without reading every file. The persistent session means indexing happens once on `start_lsp`; every subsequent query hits the warm index.
 
