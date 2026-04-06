@@ -14,6 +14,7 @@ import {
   log,
   error,
 } from "./logging/index.js";
+import { uriToFilePath } from "./shared/utils.js";
 
 export class LSPClient {
   private process: any;
@@ -145,29 +146,8 @@ export class LSPClient {
       if (this.buffer.length < headerEnd + contentLength) break; // Message not complete yet
 
       // Extract the message content - using exact content length without including the header
-      let content = this.buffer.substring(headerEnd, headerEnd + contentLength);
-      // Make the parsing more robust by ensuring content ends with a closing brace
-      if (content[content.length - 1] !== "}") {
-        debug("Content doesn't end with '}', adjusting...");
-        const lastBraceIndex = content.lastIndexOf("}");
-        if (lastBraceIndex !== -1) {
-          const actualContentLength = lastBraceIndex + 1;
-          debug(
-            `Adjusted content length from ${contentLength} to ${actualContentLength}`,
-          );
-          content = content.substring(0, actualContentLength);
-          // Update buffer position based on actual content length
-          this.buffer = this.buffer.substring(headerEnd + actualContentLength);
-        } else {
-          debug("No closing brace found, using original content length");
-          // No closing brace found, use original approach
-          this.buffer = this.buffer.substring(headerEnd + contentLength);
-        }
-      } else {
-        debug("Content ends with '}', no adjustment needed");
-        // Content looks good, remove precisely this processed message from buffer
-        this.buffer = this.buffer.substring(headerEnd + contentLength);
-      }
+      const content = this.buffer.substring(headerEnd, headerEnd + contentLength);
+      this.buffer = this.buffer.substring(headerEnd + contentLength);
 
       // Parse the message and add to queue
       try {
@@ -456,8 +436,7 @@ export class LSPClient {
   private sendNotification(method: string, params?: any): void {
     // Check if the process is started
     if (!this.process) {
-      console.error("LSP server not initialized yet");
-      return;
+      throw new Error("LSP server not initialized yet");
     }
 
     const notification: LSPMessage = {
@@ -575,8 +554,8 @@ export class LSPClient {
         },
       });
 
-      this.sendNotification("initialized", {});
       this.initialized = true;
+      this.sendNotification("initialized", {});
       notice("LSP connection initialized successfully");
     } catch (err) {
       error("Failed to initialize LSP connection:", err);
@@ -637,7 +616,7 @@ export class LSPClient {
     // Store metadata for future reopening
     if (!this.filePaths.has(uri)) {
       // Extract original file path from URI for later reopening
-      const originalPath = uri.replace(/^file:\/\//, "");
+      const originalPath = uriToFilePath(uri);
       this.filePaths.set(uri, originalPath);
     }
     this.fileLanguageIds.set(uri, languageId);
@@ -1245,7 +1224,7 @@ export class LSPClient {
     }
 
     for (const [uri, edits] of editsByUri) {
-      const filePath = uri.replace(/^file:\/\//, "");
+      const filePath = uriToFilePath(uri);
       let content = await fs.readFile(filePath, "utf-8");
       const lines = content.split("\n");
 
