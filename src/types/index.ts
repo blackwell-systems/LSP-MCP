@@ -85,25 +85,29 @@ export type PromptHandler = (args?: Record<string, string>) => Promise<{
 export const GetInfoOnLocationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe(`Line number`),
-  column: z.coerce.number().describe(`Column position`),
+  line: z.coerce.number().min(1).describe(`Line number`),
+  column: z.coerce.number().min(1).describe(`Column position`),
 });
 
 export const GetCompletionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
-  line: z.coerce.number().describe(`Line number`),
-  column: z.coerce.number().describe(`Column position`),
+  line: z.coerce.number().min(1).describe(`Line number`),
+  column: z.coerce.number().min(1).describe(`Column position`),
 });
 
 export const GetCodeActionsArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file`),
   language_id: z.string().describe(`The programming language the file is written in`),
-  start_line: z.coerce.number().describe(`Start line number`),
-  start_column: z.coerce.number().describe(`Start column position`),
-  end_line: z.coerce.number().describe(`End line number`),
-  end_column: z.coerce.number().describe(`End column position`),
-});
+  start_line: z.coerce.number().min(1).describe(`Start line number`),
+  start_column: z.coerce.number().min(1).describe(`Start column position`),
+  end_line: z.coerce.number().min(1).describe(`End line number`),
+  end_column: z.coerce.number().min(1).describe(`End column position`),
+}).refine(
+  (data) => data.start_line < data.end_line ||
+    (data.start_line === data.end_line && data.start_column <= data.end_column),
+  { message: "Range start must not be after range end" }
+);
 
 export const OpenDocumentArgsSchema = z.object({
   file_path: z.string().describe(`Path to the file to open`),
@@ -121,8 +125,8 @@ export const GetDiagnosticsArgsSchema = z.object({
 export const GetReferencesArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
-  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position of the symbol (1-based)"),
   include_declaration: z.boolean().optional().default(false).describe("Include the symbol's own declaration in results"),
 });
 
@@ -138,8 +142,8 @@ export const SetLogLevelArgsSchema = z.object({
 export const GoToDefinitionArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
-  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position of the symbol (1-based)"),
 });
 
 export const GetDocumentSymbolsArgsSchema = z.object({
@@ -154,8 +158,8 @@ export const GetWorkspaceSymbolsArgsSchema = z.object({
 export const GetSignatureHelpArgsSchema = z.object({
   file_path: z.string().describe("Path to the file"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the call site (1-based)"),
-  column: z.coerce.number().describe("Column position inside the argument list (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the call site (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position inside the argument list (1-based)"),
 });
 
 export const FormatDocumentArgsSchema = z.object({
@@ -168,13 +172,17 @@ export const FormatDocumentArgsSchema = z.object({
 export const FormatRangeArgsSchema = z.object({
   file_path: z.string().describe("Path to the file to format"),
   language_id: z.string().describe("The programming language the file is written in"),
-  start_line: z.coerce.number().describe("Start line of the range to format (1-based)"),
-  start_column: z.coerce.number().describe("Start column of the range (1-based)"),
-  end_line: z.coerce.number().describe("End line of the range to format (1-based)"),
-  end_column: z.coerce.number().describe("End column of the range (1-based)"),
+  start_line: z.coerce.number().min(1).describe("Start line of the range to format (1-based)"),
+  start_column: z.coerce.number().min(1).describe("Start column of the range (1-based)"),
+  end_line: z.coerce.number().min(1).describe("End line of the range to format (1-based)"),
+  end_column: z.coerce.number().min(1).describe("End column of the range (1-based)"),
   tab_size: z.coerce.number().optional().default(2).describe("Number of spaces per tab"),
   insert_spaces: z.boolean().optional().default(true).describe("Use spaces instead of tabs"),
-});
+}).refine(
+  (data) => data.start_line < data.end_line ||
+    (data.start_line === data.end_line && data.start_column <= data.end_column),
+  { message: "Range start must not be after range end" }
+);
 
 export const DidChangeWatchedFilesArgsSchema = z.object({
   changes: z.array(z.object({
@@ -186,23 +194,23 @@ export const DidChangeWatchedFilesArgsSchema = z.object({
 export const RenameSymbolArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol to rename"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
-  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position of the symbol (1-based)"),
   new_name: z.string().describe("The new name for the symbol"),
 });
 
 export const GoToTypeDefinitionArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
-  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position of the symbol (1-based)"),
 });
 
 export const GoToImplementationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
-  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position of the symbol (1-based)"),
 });
 
 export const ExecuteCommandArgsSchema = z.object({
@@ -221,13 +229,13 @@ export const ApplyEditArgsSchema = z.object({
 export const GoToDeclarationArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
-  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position of the symbol (1-based)"),
 });
 
 export const PrepareRenameArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol"),
   language_id: z.string().describe("The programming language the file is written in"),
-  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
-  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  line: z.coerce.number().min(1).describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().min(1).describe("Column position of the symbol (1-based)"),
 });
