@@ -7,6 +7,8 @@
 [![Tools](https://img.shields.io/badge/tools-24-blue.svg)](#tools)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+Language servers are the intelligence layer behind IDE features — autocompletion, go-to-definition, inline errors, find-all-references. They run as background processes and understand code at a semantic level: types, symbols, scope, and cross-file relationships. Every major editor uses them silently. lsp-mcp exposes that same intelligence to agents through the MCP protocol.
+
 The most complete MCP server for language intelligence — built for agents, not just protocol passthrough. **24 tools** spanning navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
 
 Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session** — agents operate on a fully indexed, stateful workspace with real-time diagnostics and cross-file reasoning, not a cold-started stub that forgets context between calls.
