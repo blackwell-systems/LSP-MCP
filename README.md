@@ -6,20 +6,20 @@
 [![Languages](https://img.shields.io/badge/languages-7_verified-green.svg)](#multi-language-support)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The most complete MCP server for language intelligence. CI-verified integration tests across **7 languages** (TypeScript, Python, Go, Rust, Java, C, PHP). Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) — not just compatible with it.
+The most complete MCP server for language intelligence. **19 tools** covering navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
 
-Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session**, enabling agents to operate on a fully indexed workspace with real-time diagnostics and cross-file awareness. Designed for agents, not just protocol passthrough.
+Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session** — agents operate on a fully indexed workspace with real-time diagnostics and cross-file awareness, not a cold-started stub that forgets context between calls.
 
 ## Why lsp-mcp
 
 | | lsp-mcp | typical alternatives |
 |--|---------|---------------------|
 | Languages (CI-verified) | **7** | 1–2 |
+| Tools | **19** | 3–5 |
 | LSP spec compliance | **3.17, built to spec** | ad hoc |
 | Connection model | **persistent** | per-request |
-| MCP resource subscriptions | **✓ real-time diagnostics** | ✗ |
-| `get_references` (cross-file) | **✓** | rarely |
-| Tools | **19** | 3–5 |
+| Cross-file references | **✓** | rarely |
+| Real-time diagnostic subscriptions | **✓** | ✗ |
 | Test coverage | **76% statements, 86% functions** | rarely tested |
 
 ## Quick Start
@@ -69,26 +69,43 @@ Every language below is integration-tested on every CI run — `start_lsp`, `ope
 
 All tools require `start_lsp` to be called first.
 
+### Session
 | Tool | Description |
 |------|-------------|
 | `start_lsp` | Start the language server with a project root |
 | `restart_lsp_server` | Restart without restarting the MCP server |
 | `open_document` | Open a file for tracking (required before position queries) |
 | `close_document` | Stop tracking a file |
+
+### Analysis
+| Tool | Description |
+|------|-------------|
 | `get_diagnostics` | Errors and warnings — omit `file_path` for whole project |
 | `get_info_on_location` | Hover info (type signatures, docs) at a position |
 | `get_completions` | Completion suggestions at a position |
+| `get_signature_help` | Function signature and active parameter at a call site |
 | `get_code_actions` | Quick fixes and refactors for a range |
-| `get_references` | All references to a symbol across the workspace |
-| `go_to_definition` | Jump to the definition of a symbol |
-| `go_to_type_definition` | Jump to the type definition of a symbol |
-| `go_to_implementation` | Jump to all implementations of an interface or abstract method |
-| `execute_command` | Execute a server-side command (e.g. from a code action) |
 | `get_document_symbols` | All symbols in a file (functions, classes, variables) |
 | `get_workspace_symbols` | Search symbols by name across the workspace |
-| `get_signature_help` | Function signature and active parameter at a call site |
-| `format_document` | Formatting edits for a file (returned for inspection, not applied) |
-| `rename_symbol` | WorkspaceEdit for renaming a symbol across the workspace (returned for inspection, not applied) |
+
+### Navigation
+| Tool | Description |
+|------|-------------|
+| `get_references` | All references to a symbol across the workspace |
+| `go_to_definition` | Jump to where a symbol is defined |
+| `go_to_type_definition` | Jump to the type definition of a symbol |
+| `go_to_implementation` | Jump to all implementations of an interface or abstract method |
+
+### Refactoring
+| Tool | Description |
+|------|-------------|
+| `rename_symbol` | Get a `WorkspaceEdit` for renaming a symbol across the workspace |
+| `format_document` | Get `TextEdit[]` formatting edits for a file |
+| `execute_command` | Execute a server-side command (e.g. from a code action) |
+
+### Utilities
+| Tool | Description |
+|------|-------------|
 | `set_log_level` | Change log verbosity at runtime |
 
 **Recommended agent workflow:**
@@ -122,13 +139,11 @@ lsp-mcp is implemented directly against the [LSP 3.17 specification](https://mic
 - Server-initiated requests (`workspace/configuration`, `window/workDoneProgress/create`, dynamic registration) — all correctly responded to, unblocking servers that gate workspace loading on these responses
 - Correct JSON-RPC framing, error code handling, and response shape normalization across hover, completion, code actions, and diagnostics
 
-See [docs/lsp-conformance.md](./docs/lsp-conformance.md) for the full implementation breakdown with spec section references.
+See [docs/lsp-conformance.md](./docs/lsp-conformance.md) for the full method coverage matrix and spec section references.
 
 ## Extensions
 
 Language-specific extensions add tools, prompts, and resource handlers, loaded automatically by language ID at startup.
-
-**Haskell extension** — provides a `haskell.typed-hole-use` prompt for typed-hole exploration.
 
 To add an extension, create `src/extensions/<language-id>.ts` implementing any subset of `getToolHandlers`, `getToolDefinitions`, `getResourceHandlers`, `getSubscriptionHandlers`, `getPromptDefinitions`, and `getPromptHandlers`. All features are namespaced by language ID.
 
