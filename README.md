@@ -3,11 +3,25 @@
 [![Blackwell Systems](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
 [![CI](https://github.com/blackwell-systems/LSP-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/LSP-MCP/actions)
 [![LSP 3.17](https://img.shields.io/badge/LSP-3.17-blue.svg)](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
+[![Languages](https://img.shields.io/badge/languages-7_verified-green.svg)](#multi-language-support)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An MCP server that bridges the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/). LLM agents use it to query real language servers for hover information, completions, diagnostics, code actions, and references — without spawning a new server process per request.
+The most complete MCP server for language intelligence. CI-verified integration tests across **7 languages** (TypeScript, Python, Go, Rust, Java, C, PHP). Built to the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) — not just compatible with it.
 
-Built to the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) — correct lifecycle, capability negotiation, progress protocol, and response shapes throughout. Works with any compliant language server: `typescript-language-server`, `rust-analyzer`, `gopls`, `clangd`, `intelephense`, and others.
+LLM agents get hover information, completions, diagnostics, code actions, references, and real-time diagnostic subscriptions — backed by the same language servers that power production IDEs.
+
+## Why lsp-mcp
+
+Most MCP-LSP implementations spawn a new language server process per request, losing all workspace indexing between calls. lsp-mcp maintains a **persistent LSP connection** so the language server builds and retains its understanding of your project across the entire agent session.
+
+| | lsp-mcp | typical alternatives |
+|--|---------|---------------------|
+| Languages (CI-verified) | **7** | 1–2 |
+| LSP spec compliance | **3.17, built to spec** | ad hoc |
+| Connection model | **persistent** | per-request |
+| MCP resource subscriptions | **✓ real-time diagnostics** | ✗ |
+| `get_references` (cross-file) | **✓** | rarely |
+| Test coverage | **76% statements, 86% functions** | rarely tested |
 
 ## Quick Start
 
@@ -92,10 +106,24 @@ The client implements the full LSP 3.17 lifecycle and protocol correctly:
 - [`textDocument/codeAction`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_codeAction) — `CodeActionContext.diagnostics` populated with diagnostics overlapping the requested range, enabling diagnostic-specific quick fixes (§3.15.22)
 - [`textDocument/publishDiagnostics`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_publishDiagnostics) — params shape correct; `versionSupport: false` declared and honored (§3.17.1)
 
+## Multi-Language Support
+
+Every language below is integration-tested on every CI run — `start_lsp`, `open_document`, `get_diagnostics`, and `get_info_on_location` all verified against the real language server binary:
+
+| Language | Server | Install |
+|----------|--------|---------|
+| TypeScript / JavaScript | `typescript-language-server` | `npm i -g typescript-language-server typescript` |
+| Python | `pyright-langserver` | `npm i -g pyright` |
+| Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
+| Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
+| Java | `jdtls` | [eclipse.jdt.ls releases](https://download.eclipse.org/jdtls/snapshots/) |
+| C / C++ | `clangd` | `apt install clangd` / `brew install llvm` |
+| PHP | `intelephense` | `npm i -g intelephense` |
+
 ## Prerequisites
 
 - Node.js 18+
-- A language server binary accessible on `PATH` (e.g. `typescript-language-server`, `rust-analyzer`, `gopls`, `clangd`)
+- A language server binary on `PATH` (see table above)
 
 ## Tools
 
