@@ -42,6 +42,9 @@ export class LSPClient {
   private activeProgressTokens: Set<string | number> = new Set();
   private workspaceReadyResolvers: Array<() => void> = [];
 
+  // Buffer last N bytes of stderr to surface on crash
+  private stderrBuffer: string = "";
+
   constructor(lspServerPath: string, lspServerArgs: string[] = []) {
     this.lspServerPath = lspServerPath;
     this.lspServerArgs = lspServerArgs;
@@ -58,8 +61,23 @@ export class LSPClient {
 
     // Set up event listeners
     this.process.stdout.on("data", (data: Buffer) => this.handleData(data));
+    this.process.stdout.on("error", (err: Error) => {
+      debug(`LSP stdout pipe error: ${err.message}`);
+    });
     this.process.stderr.on("data", (data: Buffer) => {
-      debug(`LSP Server Message: ${data.toString()}`);
+      const text = data.toString();
+      debug(`LSP Server Message: ${text}`);
+      // Keep last 4KB of stderr for crash diagnostics
+      this.stderrBuffer = (this.stderrBuffer + text).slice(-4096);
+    });
+    this.process.stderr.on("error", (err: Error) => {
+      debug(`LSP stderr pipe error: ${err.message}`);
+    });
+    // Handle EPIPE and other write errors when the LSP process dies — without
+    // this, writing to a dead process's stdin emits an unhandled 'error' event
+    // which propagates to uncaughtException and kills the MCP server.
+    this.process.stdin.on("error", (err: Error) => {
+      debug(`LSP stdin pipe error: ${err.message}`);
     });
 
     this.process.on("error", (err: Error) => {
@@ -74,7 +92,12 @@ export class LSPClient {
     });
 
     this.process.on("close", (code: number) => {
-      notice(`LSP server process exited with code ${code}`);
+      if (code !== 0 && this.stderrBuffer.trim()) {
+        notice(`LSP server process exited with code ${code}. Last stderr:\n${this.stderrBuffer.trim()}`);
+      } else {
+        notice(`LSP server process exited with code ${code}`);
+      }
+      this.stderrBuffer = "";
       this.initialized = false;
       // Reject all pending requests so callers fail fast instead of waiting for timeouts
       if (this.responsePromises.size > 0) {
