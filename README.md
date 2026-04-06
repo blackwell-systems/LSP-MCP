@@ -4,9 +4,10 @@
 [![CI](https://github.com/blackwell-systems/LSP-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/LSP-MCP/actions)
 [![LSP 3.17](https://img.shields.io/badge/LSP-3.17-blue.svg)](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
 [![Languages](https://img.shields.io/badge/languages-7_verified-green.svg)](#multi-language-support)
+[![Tools](https://img.shields.io/badge/tools-24-blue.svg)](#tools)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The most complete MCP server for language intelligence — built for agents, not just protocol passthrough. **22 tools** spanning navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
+The most complete MCP server for language intelligence — built for agents, not just protocol passthrough. **24 tools** spanning navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
 
 Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session** — agents operate on a fully indexed, stateful workspace with real-time diagnostics and cross-file reasoning, not a cold-started stub that forgets context between calls.
 
@@ -24,7 +25,7 @@ lsp-mcp fixes that.
 | | lsp-mcp | other MCP-LSP implementations |
 |--|---------|---------------------|
 | Languages (CI-verified) | **7** | 1–2 |
-| Tools | **22** | 3–5 |
+| Tools | **24** | 3–5 |
 | LSP spec compliance | **3.17, built to spec** | ad hoc |
 | Connection model | **persistent** | per-request |
 | Cross-file references | **✓** | rarely |
@@ -119,12 +120,14 @@ All tools require `start_lsp` to be called first.
 | `rename_symbol` | Get a `WorkspaceEdit` for renaming a symbol across the workspace |
 | `prepare_rename` | Validate a rename is possible before committing |
 | `format_document` | Get `TextEdit[]` formatting edits for a file |
+| `format_range` | Get `TextEdit[]` formatting edits for a selection |
 | `apply_edit` | Apply a `WorkspaceEdit` to disk (use with `rename_symbol` or `format_document`) |
 | `execute_command` | Execute a server-side command (e.g. from a code action) |
 
 ### Utilities
 | Tool | Description |
 |------|-------------|
+| `did_change_watched_files` | Notify the server when files change on disk outside the editor |
 | `set_log_level` | Change log verbosity at runtime |
 
 **Recommended agent workflow:**

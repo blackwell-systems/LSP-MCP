@@ -17,6 +17,8 @@ import {
   GetWorkspaceSymbolsArgsSchema,
   GetSignatureHelpArgsSchema,
   FormatDocumentArgsSchema,
+  FormatRangeArgsSchema,
+  DidChangeWatchedFilesArgsSchema,
   RenameSymbolArgsSchema,
   GoToTypeDefinitionArgsSchema,
   GoToImplementationArgsSchema,
@@ -368,6 +370,39 @@ async function handleFormatDocument(
   return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
 }
 
+async function handleFormatRange(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof FormatRangeArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Range-formatting: ${args.file_path} [${args.start_line}:${args.start_column}-${args.end_line}:${args.end_column}]`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const edits = await lspClient!.formatRange(
+    fileUri,
+    {
+      start: { line: args.start_line - 1, character: args.start_column - 1 },
+      end: { line: args.end_line - 1, character: args.end_column - 1 },
+    },
+    { tabSize: args.tab_size, insertSpaces: args.insert_spaces },
+  );
+  debug(`Format range returned ${edits.length} edit(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
+}
+
+async function handleDidChangeWatchedFiles(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof DidChangeWatchedFilesArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Notifying server of ${args.changes.length} file change(s)`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  lspClient!.didChangeWatchedFiles(args.changes as Array<{ uri: string; type: 1 | 2 | 3 }>);
+  return { content: [{ type: "text", text: `Notified server of ${args.changes.length} file change(s)` }] };
+}
+
 async function handleRenameSymbol(
   getLspClient: () => LSPClient | null,
   args: z.infer<typeof RenameSymbolArgsSchema>,
@@ -573,6 +608,14 @@ export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerP
       schema: FormatDocumentArgsSchema,
       handler: (args: any) => handleFormatDocument(getLspClient, args),
     },
+    "format_range": {
+      schema: FormatRangeArgsSchema,
+      handler: (args: any) => handleFormatRange(getLspClient, args),
+    },
+    "did_change_watched_files": {
+      schema: DidChangeWatchedFilesArgsSchema,
+      handler: (args: any) => handleDidChangeWatchedFiles(getLspClient, args),
+    },
     "rename_symbol": {
       schema: RenameSymbolArgsSchema,
       handler: (args: any) => handleRenameSymbol(getLspClient, args),
@@ -681,6 +724,16 @@ export const getToolDefinitions = () => {
       name: "format_document",
       description: "Get formatting edits for an entire document via LSP. Returns TextEdit[] describing the changes needed to format the file according to the language server's style rules. The edits are returned for inspection — they are NOT applied automatically. Use this to see what formatting changes a formatter would make.",
       inputSchema: zodToJsonSchema(FormatDocumentArgsSchema) as ToolInput,
+    },
+    {
+      name: "format_range",
+      description: "Get formatting edits for a specific range within a document via LSP (textDocument/rangeFormatting). Returns TextEdit[] for the selected lines/characters only. Use this when you want to format a function, block, or selection rather than the entire file. The edits are NOT applied automatically.",
+      inputSchema: zodToJsonSchema(FormatRangeArgsSchema) as ToolInput,
+    },
+    {
+      name: "did_change_watched_files",
+      description: "Notify the language server that files have changed on disk outside the editor (workspace/didChangeWatchedFiles). Use this after writing files directly to disk so the server refreshes its caches. Change types: 1=created, 2=changed, 3=deleted. File URIs must use the file:/// scheme.",
+      inputSchema: zodToJsonSchema(DidChangeWatchedFilesArgsSchema) as ToolInput,
     },
     {
       name: "rename_symbol",

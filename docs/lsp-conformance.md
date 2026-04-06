@@ -33,7 +33,7 @@ Every LSP 3.17 method and its MCP surface. "Protocol only" means the method is c
 | `textDocument/selectionRange` | §3.15.29 | — | ✗ not yet implemented |
 | `textDocument/foldingRange` | §3.15.28 | — | ✗ not yet implemented |
 | `textDocument/documentHighlight` | §3.15.10 | — | ✗ not yet implemented |
-| `textDocument/rangeFormatting` | §3.15.17 | — | ✗ not yet implemented |
+| `textDocument/rangeFormatting` | §3.15.17 | `format_range` | ✓ |
 | `textDocument/codeLens` | §3.15.21 | — | ✗ not yet implemented |
 | `textDocument/inlayHint` | §3.17.11 | — | ✗ not yet implemented |
 | `textDocument/semanticTokens` | §3.16.12 | — | ✗ not yet implemented |
@@ -45,7 +45,7 @@ Every LSP 3.17 method and its MCP surface. "Protocol only" means the method is c
 | `workspace/symbol` | §3.15.21 | `get_workspace_symbols` | ✓ |
 | `workspace/configuration` | §3.16.14 | — | ✓ protocol only (server-initiated) |
 | `workspace/executeCommand` | §3.16.13 | `execute_command` | ✓ |
-| `workspace/didChangeWatchedFiles` | §3.16.8 | — | ✗ capability declared only |
+| `workspace/didChangeWatchedFiles` | §3.16.8 | `did_change_watched_files` | ✓ |
 
 ### Protocol Infrastructure
 

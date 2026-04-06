@@ -1035,6 +1035,47 @@ export class LSPClient {
     return [];
   }
 
+  async formatRange(
+    uri: string,
+    range: { start: { line: number; character: number }; end: { line: number; character: number } },
+    options: { tabSize: number; insertSpaces: boolean },
+  ): Promise<any[]> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Range-formatting document: ${uri}`);
+
+    if (!this.serverCapabilities?.documentRangeFormattingProvider) {
+      debug("Server does not declare documentRangeFormattingProvider capability — skipping");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/rangeFormatting", {
+        textDocument: { uri },
+        range,
+        options,
+      });
+
+      if (Array.isArray(response)) {
+        return response;
+      }
+    } catch (err) {
+      warning(`Error range-formatting document: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  didChangeWatchedFiles(changes: Array<{ uri: string; type: 1 | 2 | 3 }>): void {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+    debug(`Sending didChangeWatchedFiles: ${changes.length} change(s)`);
+    this.sendNotification("workspace/didChangeWatchedFiles", { changes });
+  }
+
   async renameSymbol(
     uri: string,
     position: { line: number; character: number },

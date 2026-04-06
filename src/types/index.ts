@@ -165,6 +165,24 @@ export const FormatDocumentArgsSchema = z.object({
   insert_spaces: z.boolean().optional().default(true).describe("Use spaces instead of tabs"),
 });
 
+export const FormatRangeArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file to format"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  start_line: z.coerce.number().describe("Start line of the range to format (1-based)"),
+  start_column: z.coerce.number().describe("Start column of the range (1-based)"),
+  end_line: z.coerce.number().describe("End line of the range to format (1-based)"),
+  end_column: z.coerce.number().describe("End column of the range (1-based)"),
+  tab_size: z.coerce.number().optional().default(2).describe("Number of spaces per tab"),
+  insert_spaces: z.boolean().optional().default(true).describe("Use spaces instead of tabs"),
+});
+
+export const DidChangeWatchedFilesArgsSchema = z.object({
+  changes: z.array(z.object({
+    uri: z.string().describe("File URI (file:///absolute/path)"),
+    type: z.union([z.literal(1), z.literal(2), z.literal(3)]).describe("Change type: 1=created, 2=changed, 3=deleted"),
+  })).describe("List of file change events to report to the language server"),
+});
+
 export const RenameSymbolArgsSchema = z.object({
   file_path: z.string().describe("Path to the file containing the symbol to rename"),
   language_id: z.string().describe("The programming language the file is written in"),

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `format_range` tool — `textDocument/rangeFormatting`, formats a selection rather than the whole file; returns `TextEdit[]` for inspection
+- `did_change_watched_files` tool — `workspace/didChangeWatchedFiles`, notifies the language server when files change on disk outside the editor (create/change/delete)
 - `apply_edit` tool — applies a `WorkspaceEdit` (from `rename_symbol` or `format_document`) directly to disk; sends `textDocument/didChange` for each modified file so the LSP server sees the updates
 - `go_to_declaration` tool — `textDocument/declaration`, completes the "go to X" navigation family (distinct from definition — e.g. C/C++ header declarations)
 - `prepare_rename` tool — `textDocument/prepareRename`, validates a rename is possible at a position before calling `rename_symbol`
