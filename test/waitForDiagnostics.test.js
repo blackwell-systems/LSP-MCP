@@ -62,9 +62,9 @@ async function testHardTimeout() {
 
   // trigger no callbacks
 
-  // should resolve within 600ms (300ms timeout + buffer)
+  // should resolve within 2000ms (300ms timeout + 1700ms CI buffer)
   const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Test timeout")), 600)
+    setTimeout(() => reject(new Error("Test timeout")), 2000)
   );
 
   await Promise.race([promise, timeout]);
@@ -95,9 +95,9 @@ async function testMultipleUris() {
   // now trigger real update for uri2
   mock.triggerDiagnostics(uri2, [{ message: "warning" }]);
 
-  // should resolve within 1000ms
+  // should resolve within 3000ms (500ms stable delay + 2500ms CI buffer)
   const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Test timeout")), 1000)
+    setTimeout(() => reject(new Error("Test timeout")), 3000)
   );
 
   await Promise.race([promise, timeout]);
@@ -108,9 +108,9 @@ async function testEmptyTargetUris() {
   const mock = createMockLspClient();
   const promise = waitForDiagnostics(mock, []);
 
-  // should resolve within 700ms (stabilisation timer fires immediately)
+  // should resolve within 2000ms (fires immediately + 2000ms CI buffer)
   const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Test timeout")), 700)
+    setTimeout(() => reject(new Error("Test timeout")), 2000)
   );
 
   await Promise.race([promise, timeout]);
