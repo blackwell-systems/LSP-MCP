@@ -405,6 +405,7 @@ async function runTests() {
       await tester.executeTool('start_lsp', {
         root_dir: TS_PROJECT_PATH
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
       });
@@ -420,6 +421,7 @@ async function runTests() {
         file_path: EXAMPLE_TS_FILE,
         language_id: 'typescript'
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
       });
@@ -433,6 +435,7 @@ async function runTests() {
         line: 4,
         column: 15
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
         // In a real test, we would verify the content contains actual hover info
@@ -447,6 +450,7 @@ async function runTests() {
         line: 5,
         column: 10
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
         // In a real test, we would verify the content contains actual completions
@@ -458,6 +462,7 @@ async function runTests() {
       await tester.executeTool('get_diagnostics', {
         file_path: EXAMPLE_TS_FILE
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
         // In a real test, we would verify the content contains actual diagnostics
@@ -474,6 +479,7 @@ async function runTests() {
         end_line: 40,
         end_column: 20
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
         // In a real test, we would verify the content contains actual code actions
@@ -490,6 +496,7 @@ async function runTests() {
         column: 18,    // 'P' in Person
         include_declaration: false
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0, 'Expected content in result');
         const text = result.content[0].text;
         const refs = JSON.parse(text);
@@ -506,6 +513,7 @@ async function runTests() {
       await tester.executeTool('close_document', {
         file_path: EXAMPLE_TS_FILE
       }, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
       });
@@ -514,6 +522,7 @@ async function runTests() {
     // Test restarting LSP server
     await tester.runTest('Restart LSP server', async () => {
       await tester.executeTool('restart_lsp_server', {}, (result) => {
+        assert(!result.isError, `Tool call returned an error: ${JSON.stringify(result.content)}`);
         assert(result.content && result.content.length > 0,
               'Expected content in the result');
       });
