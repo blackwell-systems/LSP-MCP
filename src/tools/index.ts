@@ -21,6 +21,9 @@ import {
   GoToTypeDefinitionArgsSchema,
   GoToImplementationArgsSchema,
   ExecuteCommandArgsSchema,
+  ApplyEditArgsSchema,
+  GoToDeclarationArgsSchema,
+  PrepareRenameArgsSchema,
   ToolInput,
   ToolHandler
 } from "../types/index.js";
@@ -444,6 +447,63 @@ async function handleExecuteCommand(
   return { content: [{ type: "text", text }] };
 }
 
+async function handleApplyEdit(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof ApplyEditArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Applying workspace edit`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  await lspClient!.applyWorkspaceEdit(args.workspace_edit);
+  return { content: [{ type: "text", text: "Workspace edit applied successfully" }] };
+}
+
+async function handleGoToDeclaration(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof GoToDeclarationArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Getting declaration in file: ${args.file_path} (${args.line}:${args.column})`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const locations = await lspClient!.getDeclaration(fileUri, {
+    line: args.line - 1,
+    character: args.column - 1
+  });
+  const formatted = locations.map((loc: any) => ({
+    file: loc.uri.replace(/^file:\/\//, ""),
+    line: loc.range.start.line + 1,
+    column: loc.range.start.character + 1,
+    end_line: loc.range.end.line + 1,
+    end_column: loc.range.end.character + 1,
+  }));
+  debug(`Found ${formatted.length} declaration location(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+}
+
+async function handlePrepareRename(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof PrepareRenameArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Preparing rename in file: ${args.file_path} (${args.line}:${args.column})`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const result = await lspClient!.prepareRename(fileUri, {
+    line: args.line - 1,
+    character: args.column - 1
+  });
+  const text = result !== null
+    ? JSON.stringify(result, null, 2)
+    : "Rename not supported at this position";
+  debug(`Prepare rename result: ${text.slice(0, 100)}`);
+  return { content: [{ type: "text", text }] };
+}
+
 // Define handlers for each tool
 export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerPath: string, lspServerArgs: string[], setLspClient: (client: LSPClient) => void, rootDir: string, setRootDir: (dir: string) => void, server?: any) => {
   return {
@@ -522,6 +582,18 @@ export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerP
     "execute_command": {
       schema: ExecuteCommandArgsSchema,
       handler: (args: any) => handleExecuteCommand(getLspClient, args),
+    },
+    "apply_edit": {
+      schema: ApplyEditArgsSchema,
+      handler: (args: any) => handleApplyEdit(getLspClient, args),
+    },
+    "go_to_declaration": {
+      schema: GoToDeclarationArgsSchema,
+      handler: (args: any) => handleGoToDeclaration(getLspClient, args),
+    },
+    "prepare_rename": {
+      schema: PrepareRenameArgsSchema,
+      handler: (args: any) => handlePrepareRename(getLspClient, args),
     },
   };
 };
@@ -623,6 +695,21 @@ export const getToolDefinitions = () => {
       name: "execute_command",
       description: "Execute a workspace command via LSP. Commands are server-defined identifiers returned by code actions (in the command field of a CodeAction). Use this after get_code_actions to trigger a server-side operation such as applying a refactoring, generating code, or running a server-specific action. Returns the server-defined result or null.",
       inputSchema: zodToJsonSchema(ExecuteCommandArgsSchema) as ToolInput,
+    },
+    {
+      name: "apply_edit",
+      description: "Apply a WorkspaceEdit to the workspace by writing file changes to disk. Pass the WorkspaceEdit object returned by rename_symbol or format_document. Edits are applied in reverse order to preserve offsets, then the LSP server is notified of each changed file via didChange. Use this after inspecting the edit returned by rename_symbol or format_document to commit the changes.",
+      inputSchema: zodToJsonSchema(ApplyEditArgsSchema) as ToolInput,
+    },
+    {
+      name: "go_to_declaration",
+      description: "Jump to the declaration of a symbol at a specific location in a file via LSP. Completes the 'go to X' family alongside go_to_definition, go_to_type_definition, and go_to_implementation. Most useful for languages with separate declaration and definition (e.g., C/C++ header files). Returns the file path and position where the symbol is declared.",
+      inputSchema: zodToJsonSchema(GoToDeclarationArgsSchema) as ToolInput,
+    },
+    {
+      name: "prepare_rename",
+      description: "Validate that a rename is possible at the given position before committing to rename_symbol. Returns the range that would be renamed and a placeholder name suggestion, or a message indicating rename is not supported at this position. Use this before rename_symbol to avoid attempting invalid renames. Returns null if the server does not support prepareRename.",
+      inputSchema: zodToJsonSchema(PrepareRenameArgsSchema) as ToolInput,
     },
   ];
 };

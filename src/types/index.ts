@@ -191,3 +191,25 @@ export const ExecuteCommandArgsSchema = z.object({
   command: z.string().describe("The command identifier to execute (from a code action's command field)"),
   args: z.array(z.unknown()).optional().describe("Optional arguments to pass to the command"),
 });
+
+export const ApplyEditArgsSchema = z.object({
+  workspace_edit: z.record(z.unknown()).describe(
+    "WorkspaceEdit object as returned by rename_symbol or format_document. " +
+    "Must contain either 'changes' (Record<uri, TextEdit[]>) or " +
+    "'documentChanges' (TextDocumentEdit[])."
+  ),
+});
+
+export const GoToDeclarationArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file containing the symbol"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+});
+
+export const PrepareRenameArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file containing the symbol"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+});
