@@ -135,4 +135,40 @@ export const SetLogLevelArgsSchema = z.object({
     .describe("The logging level to set")
 });
 
+export const GoToDefinitionArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file containing the symbol"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+});
 
+export const GetDocumentSymbolsArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file"),
+  language_id: z.string().describe("The programming language the file is written in"),
+});
+
+export const GetWorkspaceSymbolsArgsSchema = z.object({
+  query: z.string().describe("Search query string to filter workspace symbols. Use empty string to list all symbols."),
+});
+
+export const GetSignatureHelpArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.coerce.number().describe("Line number of the call site (1-based)"),
+  column: z.coerce.number().describe("Column position inside the argument list (1-based)"),
+});
+
+export const FormatDocumentArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file to format"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  tab_size: z.coerce.number().optional().default(2).describe("Number of spaces per tab"),
+  insert_spaces: z.boolean().optional().default(true).describe("Use spaces instead of tabs"),
+});
+
+export const RenameSymbolArgsSchema = z.object({
+  file_path: z.string().describe("Path to the file containing the symbol to rename"),
+  language_id: z.string().describe("The programming language the file is written in"),
+  line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+  column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+  new_name: z.string().describe("The new name for the symbol"),
+});
