@@ -26,9 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LSP process close now immediately rejects all pending promises — callers fail fast instead of waiting for individual timeouts when the language server crashes
 
 ### Fixed
+- **Bug:** JSON brace-trimming heuristic removed — was silently corrupting array-valued LSP responses (e.g. `Location[]` from `textDocument/references`) by truncating to the last `}` instead of trusting `Content-Length`
+- **Bug:** `initialized = true` now set before sending `initialized` notification — previously a narrow race window existed where server requests arriving immediately after could see an uninitialized client
+- **Bug:** `sendNotification` now throws on null process instead of silently returning — previously document tracking state could drift from LSP server state
+- **Bug:** Position schemas now reject `line: 0` / `column: 0` with `.min(1)` — previously produced LSP 0-based position of `-1` (undefined behavior)
+- **Bug:** `waitForDiagnostics([])` now resolves immediately instead of waiting 500ms — empty target array was triggering the full stabilisation timer
+- **Bug:** Range schemas (`GetCodeActionsArgsSchema`, `FormatRangeArgsSchema`) now reject inverted ranges via `.refine()` — previously `start_line: 10, end_line: 5` was accepted silently
+- Auto-init 100ms timer removed from `runServer` — could race with explicit `start_lsp` call, sending duplicate `initialize` requests to the language server
+- Peer-layer import violation fixed — `src/resources/index.ts` no longer imports from `src/tools/index.ts`; shared utilities moved to `src/shared/utils.ts`
+- Dead `server` parameter removed from `getToolHandlers` signature
+- Integration tests now assert `!result.isError` before content validation — previously a tool error response could silently pass the test
 - `throw error` → `throw err` in `initialize()` catch block — was throwing the logging function instead of the caught exception, crashing the MCP server on any LSP initialization failure
 - Removed `-noverify` from jdtls CI wrapper — flag was removed in Java 17 and caused immediate JVM crash on startup
 - Java fixture restructured to Maven layout (`pom.xml` + `src/main/java/com/example/`) for faster jdtls named-project initialization vs invisible-project mode
+
+### Changed
+- 16 of 24 tool handlers refactored to use shared `withDocument` helper — eliminates copy-pasted open-file pattern and unifies error handling across all document-requiring tools
+- URI-to-path conversion unified via `uriToFilePath(uri)` using `new URL(uri).pathname` — replaces 7 inconsistent ad-hoc stripping patterns (`uri.replace(/^file:\/\//, "")`, `uri.slice(7)`, etc.)
+- `createFileUri` and `checkLspClientInitialized` moved from `src/tools/index.ts` to `src/shared/utils.ts`
 
 ### Added
 - `restart_lsp_server` tool - restart the LSP server process without restarting the MCP server
