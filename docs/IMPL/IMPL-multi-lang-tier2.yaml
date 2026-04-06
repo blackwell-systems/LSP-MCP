@@ -1,0 +1,1094 @@
+title: Multi-Language Integration Test Suite Tier 2 Expansion
+feature_slug: multi-lang-tier2
+verdict: SUITABLE
+suitability_assessment: |-
+    The work decomposes cleanly into parallel fixture creation (Wave 1) and a single
+    test file update (Wave 2). Six language fixture sets are fully independent from
+    each other — Go, Python, Rust, Java, PHP, and C fixtures have zero shared state.
+    The test file (multi-lang.test.js) is owned by a single agent in Wave 2 and
+    depends on the fixture files existing before asserting cross-file references.
+
+    All five suitability questions resolve cleanly:
+    1. File decomposition: Wave 1 has 6 agents with disjoint fixture ownership (one
+       language each). Wave 2 has 1 agent owning the test file exclusively.
+    2. No investigation-first items: the plan document fully specifies all changes
+       including exact fixture content, position metadata, assertion logic, and
+       output format.
+    3. Interface discoverability: all 7 new test function signatures are defined
+       in the plan doc (testGetDocumentSymbols, testGoToDefinition, testGetReferences,
+       testGetCompletions, testGetWorkspaceSymbols, testFormatDocument, testGoToDeclaration).
+    4. Pre-implementation status: currently 0 of these are implemented (single-file
+       Tier 1 only). All TODO.
+    5. Parallelization value: build/test cycle is slow (npm run test:multi-lang takes
+       ~5 min due to Java jdtls), and Wave 1 has 6 independent agents. Clear speedup.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~6 agents Wave 1 x 5 min avg + 1 agent Wave 2 x 15 min = ~15 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+    Sequential baseline: ~7 tasks x 8 min avg = ~56 min
+    Time savings: ~26 min (46% faster)
+    Recommendation: Clear speedup. Proceed.
+test_command: npm run test:multi-lang
+lint_command: none
+file_ownership:
+    - file: test/fixtures/go/greeter.go
+      agent: A
+      wave: 1
+      action: new
+    - file: test/fixtures/python/greeter.py
+      agent: B
+      wave: 1
+      action: new
+    - file: test/fixtures/rust/src/main.rs
+      agent: C
+      wave: 1
+      action: modify
+    - file: test/fixtures/rust/src/greeter.rs
+      agent: C
+      wave: 1
+      action: new
+    - file: test/fixtures/java/src/main/java/com/example/Greeter.java
+      agent: D
+      wave: 1
+      action: new
+    - file: test/fixtures/php/Greeter.php
+      agent: E
+      wave: 1
+      action: new
+    - file: test/fixtures/c/person.h
+      agent: F
+      wave: 1
+      action: new
+    - file: test/fixtures/c/person.c
+      agent: F
+      wave: 1
+      action: modify
+    - file: test/fixtures/c/greeter.c
+      agent: F
+      wave: 1
+      action: new
+    - file: test/fixtures/c/compile_commands.json
+      agent: F
+      wave: 1
+      action: new
+    - file: test/multi-lang.test.js
+      agent: G
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+        - D
+        - E
+        - F
+interface_contracts:
+    - name: testGetDocumentSymbols
+      description: Tests get_document_symbols tool; asserts result is non-empty array containing Person type entry
+      definition: |
+        async function testGetDocumentSymbols(client, lang) {
+          // Calls get_document_symbols with { file_path: lang.file }
+          // Returns { tool: 'get_document_symbols', status: 'pass'|'skip'|'fail', detail: string }
+          // Assert: result.content[0].text parses to non-empty array containing
+          //   an entry whose name matches lang.symbolName (e.g. 'Person')
+        }
+      location: test/multi-lang.test.js
+    - name: testGoToDefinition
+      description: Tests go_to_definition; called at call site, asserts result URI and line match definition
+      definition: |
+        async function testGoToDefinition(client, lang) {
+          // Calls go_to_definition with {
+          //   file_path: lang.file,
+          //   language_id: lang.id,
+          //   line: lang.callSiteLine,
+          //   column: lang.callSiteColumn
+          // }
+          // Returns { tool: 'go_to_definition', status: 'pass'|'skip'|'fail', detail: string }
+          // Assert: result URI ends with expected filename and range.start.line === lang.definitionLine - 1
+          //   (LSP uses 0-indexed lines internally, but lang config stores 1-indexed)
+        }
+      location: test/multi-lang.test.js
+    - name: testGetReferences
+      description: Tests get_references on Person type; asserts count >= 2 when secondFile exists
+      definition: |
+        async function testGetReferences(client, lang) {
+          // Must open lang.secondFile via open_document first if lang.secondFile is defined
+          // Calls get_references with {
+          //   file_path: lang.file,
+          //   language_id: lang.id,
+          //   line: lang.referenceLine,
+          //   column: lang.referenceColumn,
+          //   include_declaration: true
+          // }
+          // Returns { tool: 'get_references', status: 'pass'|'skip'|'fail', detail: string }
+          // Assert: result length >= 2 if lang.secondFile, else >= 1
+        }
+      location: test/multi-lang.test.js
+    - name: testGetCompletions
+      description: Tests get_completions; asserts result is non-empty array
+      definition: |
+        async function testGetCompletions(client, lang) {
+          // Calls get_completions with {
+          //   file_path: lang.file,
+          //   language_id: lang.id,
+          //   line: lang.completionLine,
+          //   column: lang.completionColumn
+          // }
+          // Returns { tool: 'get_completions', status: 'pass'|'skip'|'fail', detail: string }
+          // Assert: result.content[0].text parses to non-empty array
+        }
+      location: test/multi-lang.test.js
+    - name: testGetWorkspaceSymbols
+      description: Tests get_workspace_symbols with query 'Person'; asserts result contains entry named Person
+      definition: |
+        async function testGetWorkspaceSymbols(client, lang) {
+          // Calls get_workspace_symbols with { query: lang.workspaceSymbolQuery }
+          // Returns { tool: 'get_workspace_symbols', status: 'pass'|'skip'|'fail', detail: string }
+          // Assert: result contains an entry whose name matches lang.workspaceSymbolQuery
+          //   (for Go, match 'type Person struct' or just contains 'Person')
+        }
+      location: test/multi-lang.test.js
+    - name: testFormatDocument
+      description: Capability-gated format_document test; skips if serverCapabilities.documentFormattingProvider is falsy
+      definition: |
+        async function testFormatDocument(client, lang) {
+          // Skip if lang.supportsFormatting === false
+          // Calls format_document with { file_path: lang.file, language_id: lang.id }
+          // Returns { tool: 'format_document', status: 'pass'|'skip'|'fail', detail: string }
+          // Assert: result is array (possibly empty); no error thrown
+        }
+      location: test/multi-lang.test.js
+    - name: testGoToDeclaration
+      description: C-only; tests go_to_declaration from person.c definition to person.h declaration
+      definition: |
+        async function testGoToDeclaration(client, lang) {
+          // Only called when lang.id === 'c'
+          // Opens person.h via open_document
+          // Calls go_to_declaration with {
+          //   file_path: lang.file,  // person.c
+          //   language_id: 'c',
+          //   line: lang.declarationLine,
+          //   column: lang.declarationColumn
+          // }
+          // Returns { tool: 'go_to_declaration', status: 'pass'|'skip'|'fail', detail: string }
+          // Assert: result URI ends with 'person.h'
+        }
+      location: test/multi-lang.test.js
+    - name: LanguageConfig
+      description: Extended language config object — new fields added to each LANGUAGES entry
+      definition: |
+        {
+          // Existing Tier 1 fields (unchanged):
+          name, id, binary, serverArgs, fixture, file, hoverLine, hoverColumn,
+
+          // New Tier 2 fields:
+          definitionLine: number,    // 1-indexed line of add() function definition
+          definitionColumn: number,  // 1-indexed column of add() identifier
+          callSiteLine: number,      // 1-indexed line of add() call site
+          callSiteColumn: number,    // 1-indexed column of add() call site
+          referenceLine: number,     // 1-indexed line of Person type identifier (for get_references)
+          referenceColumn: number,   // 1-indexed column of Person identifier
+          completionLine: number,    // 1-indexed line for get_completions trigger (after dot/paren)
+          completionColumn: number,  // 1-indexed column for get_completions trigger
+          workspaceSymbolQuery: string,  // e.g. 'Person'
+          supportsFormatting: boolean,   // false for Python, PHP (capability-gated)
+          secondFile?: string,           // absolute path to cross-file fixture (for get_references)
+          symbolName: string,            // expected symbol name in get_document_symbols result
+          // C-only:
+          declarationLine?: number,      // line in person.c referencing greet_person (for go_to_declaration)
+          declarationColumn?: number,    // column for go_to_declaration
+        }
+      location: test/multi-lang.test.js
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Task: Create Go greeter fixture file
+
+            Create `test/fixtures/go/greeter.go` — a second Go source file in the same
+            `package main` that imports the `Person` type defined in `main.go`.
+
+            ### File to create: test/fixtures/go/greeter.go
+
+            ```go
+            package main
+
+            import "fmt"
+
+            // Greeter wraps a Person and produces greetings.
+            type Greeter struct {
+                person Person
+            }
+
+            func NewGreeter(p Person) Greeter {
+                return Greeter{person: p}
+            }
+
+            func (g Greeter) SayHello() string {
+                return fmt.Sprintf("Greeter says: %s", g.person.Greet())
+            }
+            ```
+
+            This file references `Person` at lines 7 (struct field), 11 (parameter), and
+            14 (method receiver context). Combined with main.go line 6 (definition) and
+            line 21 (usage), get_references on `Person` should return 5+ locations.
+
+            ### Verification
+            - Run: `ls test/fixtures/go/` — should show both `main.go` and `greeter.go`
+            - Run: `grep -n "Person" test/fixtures/go/greeter.go` — should show lines 7, 11, 14
+
+            ### Constraints
+            - Do NOT modify test/fixtures/go/main.go
+            - Do NOT modify test/multi-lang.test.js
+          files:
+            - test/fixtures/go/greeter.go
+        - id: B
+          task: |-
+            ## Task: Create Python greeter fixture file
+
+            Create `test/fixtures/python/greeter.py` — a second Python file that imports
+            `Person` from `main.py` to enable cross-file get_references.
+
+            ### File to create: test/fixtures/python/greeter.py
+
+            ```python
+            from main import Person
+
+            class Greeter:
+                def __init__(self, person: Person) -> None:
+                    self.person = person
+
+                def say_hello(self) -> str:
+                    return f"Greeter says: {self.person.greet()}"
+            ```
+
+            `Person` appears in `greeter.py` as import target (line 1) and type annotation
+            (line 4). Combined with `main.py` line 4 (class definition) and line 13 (usage),
+            get_references on `Person` should return multiple cross-file locations.
+
+            ### Verification
+            - Run: `ls test/fixtures/python/` — should show `main.py` and `greeter.py`
+            - Run: `grep -n "Person" test/fixtures/python/greeter.py` — should show lines 1 and 4
+
+            ### Constraints
+            - Do NOT modify test/fixtures/python/main.py
+            - Do NOT modify test/multi-lang.test.js
+          files:
+            - test/fixtures/python/greeter.py
+        - id: C
+          task: |-
+            ## Task: Update Rust fixture for cross-file references
+
+            The Rust fixture needs two changes: make `Person` and its methods `pub` in
+            `main.rs`, add `mod greeter;`, and create `src/greeter.rs`.
+
+            ### Step 1: Modify test/fixtures/rust/src/main.rs
+
+            Read the current file at `/Users/dayna.blackwell/code/LSP-MCP/test/fixtures/rust/src/main.rs`.
+
+            Make these changes:
+            1. Change `struct Person {` to `pub struct Person {`
+            2. Change `impl Person {` block: make `fn new` to `pub fn new` and `fn greet` to `pub fn greet`
+            3. Add `mod greeter;` after the `use` imports (before or after `fn add`) — place it
+               just before `fn add(x: i32, y: i32) -> i32 {` on line 21.
+
+            The resulting file should have:
+            - Line 2: `pub struct Person {`
+            - Line 7: `    pub fn new(name: &str, age: u32) -> Person {`
+            - Line 15: `    pub fn greet(&self) -> String {`
+            - Line 20: `mod greeter;` (new line inserted before `fn add`)
+            - `fn add` shifts to line 22, `fn main` shifts accordingly
+
+            ### Step 2: Create test/fixtures/rust/src/greeter.rs
+
+            ```rust
+            use crate::Person;
+
+            pub struct Greeter {
+                person: Person,
+            }
+
+            impl Greeter {
+                pub fn new(person: Person) -> Self {
+                    Greeter { person }
+                }
+
+                pub fn say_hello(&self) -> String {
+                    format!("Greeter says: {}", self.person.greet())
+                }
+            }
+            ```
+
+            `Person` appears at line 1 (use), line 4 (field), line 8 (parameter).
+
+            ### Verification
+            - Run: `grep -n "pub struct Person" test/fixtures/rust/src/main.rs` — should match
+            - Run: `grep -n "pub fn greet" test/fixtures/rust/src/main.rs` — should match
+            - Run: `grep -n "mod greeter" test/fixtures/rust/src/main.rs` — should match
+            - Run: `grep -n "Person" test/fixtures/rust/src/greeter.rs` — should show lines 1, 4, 8
+
+            ### Constraints
+            - Do NOT modify test/multi-lang.test.js
+            - The `fn add` function in main.rs must remain unchanged (signature, body)
+            - The `fn main` function in main.rs must remain unchanged
+          files:
+            - test/fixtures/rust/src/main.rs
+            - test/fixtures/rust/src/greeter.rs
+        - id: D
+          task: |-
+            ## Task: Create Java Greeter fixture file
+
+            Create `test/fixtures/java/src/main/java/com/example/Greeter.java` — a second
+            Java class in the same package that uses `Person` for cross-file get_references.
+
+            ### File to create: test/fixtures/java/src/main/java/com/example/Greeter.java
+
+            ```java
+            package com.example;
+
+            public class Greeter {
+                private Person person;
+
+                public Greeter(Person person) {
+                    this.person = person;
+                }
+
+                public String sayHello() {
+                    return "Greeter says: " + this.person.greet();
+                }
+            }
+            ```
+
+            `Person` appears at line 4 (field type), line 6 (constructor parameter).
+            Combined with `Person.java` definitions and usages, get_references on `Person`
+            should return cross-file locations.
+
+            ### Verification
+            - Run: `ls test/fixtures/java/src/main/java/com/example/` — should show Person.java and Greeter.java
+            - Run: `grep -n "Person" test/fixtures/java/src/main/java/com/example/Greeter.java` — should show lines 4 and 6
+
+            ### Constraints
+            - Do NOT modify test/fixtures/java/src/main/java/com/example/Person.java
+            - Do NOT modify test/multi-lang.test.js
+          files:
+            - test/fixtures/java/src/main/java/com/example/Greeter.java
+        - id: E
+          task: |-
+            ## Task: Create PHP Greeter fixture file
+
+            Create `test/fixtures/php/Greeter.php` — a second PHP file that requires
+            Person.php and uses the Person class for cross-file get_references.
+
+            ### File to create: test/fixtures/php/Greeter.php
+
+            ```php
+            <?php
+
+            require_once 'Person.php';
+
+            class Greeter {
+                private Person $person;
+
+                public function __construct(Person $person) {
+                    $this->person = $person;
+                }
+
+                public function sayHello(): string {
+                    return "Greeter says: " . $this->person->greet();
+                }
+            }
+            ```
+
+            `Person` appears at line 6 (typed property), line 8 (constructor parameter type).
+            Combined with `Person.php` definitions and usages, get_references on `Person`
+            should return cross-file locations.
+
+            ### Verification
+            - Run: `ls test/fixtures/php/` — should show Person.php and Greeter.php
+            - Run: `grep -n "Person" test/fixtures/php/Greeter.php` — should show lines 6 and 8
+
+            ### Constraints
+            - Do NOT modify test/fixtures/php/Person.php
+            - Do NOT modify test/multi-lang.test.js
+          files:
+            - test/fixtures/php/Greeter.php
+        - id: F
+          task: |-
+            ## Task: Refactor C fixture to header + greeter structure
+
+            The C fixture currently has a single `person.c` file. Refactor it into a
+            proper header/implementation split so clangd can support `go_to_declaration`
+            (which navigates from implementation to header declaration).
+
+            ### Step 1: Create test/fixtures/c/person.h
+
+            ```c
+            #ifndef PERSON_H
+            #define PERSON_H
+
+            /**
+             * A simple person struct with greeting functionality.
+             */
+            typedef struct {
+                char *name;
+                int age;
+            } Person;
+
+            /**
+             * Create a person with the given name and age.
+             */
+            Person create_person(const char *name, int age);
+
+            int add(int x, int y);
+
+            #endif /* PERSON_H */
+            ```
+
+            ### Step 2: Modify test/fixtures/c/person.c
+
+            Replace the entire content with:
+
+            ```c
+            #include "person.h"
+
+            Person create_person(const char *name, int age) {
+                Person p;
+                p.name = (char *)name;
+                p.age = age;
+                return p;
+            }
+
+            int add(int x, int y) {
+                return x + y;
+            }
+
+            int main(void) {
+                Person p = create_person("Alice", 30);
+                return add(1, 2);
+            }
+            ```
+
+            Note: The typedef struct and function declarations are now only in person.h.
+            person.c includes person.h and provides the implementations.
+
+            ### Step 3: Create test/fixtures/c/greeter.c
+
+            ```c
+            #include "person.h"
+            #include <stdio.h>
+
+            void greet_person(Person p) {
+                printf("Greeter says: Hello, %s\n", p.name);
+            }
+            ```
+
+            `go_to_declaration` on `greet_person` in greeter.c won't apply here, but
+            `go_to_declaration` on `Person` in person.c will resolve to person.h line 7
+            (the typedef struct declaration).
+
+            ### Step 4: Create test/fixtures/c/compile_commands.json
+
+            ```json
+            [
+              {
+                "directory": "/placeholder",
+                "command": "cc -std=c11 person.c greeter.c -o person",
+                "file": "person.c"
+              },
+              {
+                "directory": "/placeholder",
+                "command": "cc -std=c11 person.c greeter.c -o person",
+                "file": "greeter.c"
+              }
+            ]
+            ```
+
+            Note: The `directory` field is a placeholder. Clangd uses compile_commands.json
+            to understand the compile graph. The fixture directory path doesn't need to be
+            exact — clangd will resolve includes relative to the file's actual location.
+            The important thing is that both files are listed so clangd indexes both.
+
+            ### Position metadata for person.c after refactor:
+            - `add` defined at line 11 (0-indexed: 10), col 5 (0-indexed: 4)
+            - `add(1, 2)` call site at line 16 (0-indexed: 15), col 12 (0-indexed: 11)
+            - `Person` type at line 3 (0-indexed: 2), col 5 — in `create_person` return type
+            - For `go_to_declaration`: `Person` in person.c line 3 → person.h typedef
+            - `declarationLine`: 3 (1-indexed, the `Person create_person` line in person.c)
+            - `declarationColumn`: 1
+
+            ### Verification
+            - Run: `ls test/fixtures/c/` — should show person.h, person.c, greeter.c, compile_commands.json
+            - Run: `grep -n "#include" test/fixtures/c/person.c` — should show `#include "person.h"`
+            - Run: `grep -n "Person" test/fixtures/c/person.h` — should show typedef and declaration
+            - Run: `grep -n "Person" test/fixtures/c/greeter.c` — should show parameter type
+
+            ### Constraints
+            - Do NOT modify test/multi-lang.test.js
+            - The `add` and `create_person` function signatures must remain identical to the
+              current person.c (same parameter names, same return types)
+          files:
+            - test/fixtures/c/person.h
+            - test/fixtures/c/person.c
+            - test/fixtures/c/greeter.c
+            - test/fixtures/c/compile_commands.json
+    - number: 2
+      agents:
+        - id: G
+          task: |-
+            ## Task: Expand multi-lang.test.js from Tier 1 to Tier 2
+
+            Update `test/multi-lang.test.js` to add 6 new test functions, update language
+            configs with position metadata, open second fixture files where needed, update
+            the testLanguage() orchestrator, and expand the summary table.
+
+            ### Context: current file structure (read the file first)
+
+            The file lives at `/Users/dayna.blackwell/code/LSP-MCP/test/multi-lang.test.js`.
+            Read it fully before editing. The current structure is:
+            - Imports and constants (lines 1-18)
+            - LANGUAGES array (lines 21-93)
+            - CustomStdioTransport class (lines 96-163)
+            - resolveBinary() (lines 166-173)
+            - testLanguage() function (lines 176-315)
+            - printSummary() function (lines 318-330)
+            - runTests() main runner (lines 333-374)
+
+            ### Step 1: Expand LANGUAGES array entries
+
+            For each language object in the `LANGUAGES` array, add these new fields.
+            The LANGUAGES array starts at line 21 with `const LANGUAGES = [`. Edit each
+            object in place.
+
+            **TypeScript** (ts-project/src/example.ts):
+            ```js
+            definitionLine: 4,      // 'export function add(' — 1-indexed
+            definitionColumn: 17,   // column of 'add' identifier
+            callSiteLine: 4,        // consumer.ts: 'const sum = add(1, 2);'
+            callSiteColumn: 14,     // column of 'add(' in consumer.ts
+            callSiteFile: path.join(__dirname, 'ts-project', 'src', 'consumer.ts'),
+            referenceLine: 11,      // 'export interface Person {' in example.ts
+            referenceColumn: 18,    // column of 'Person'
+            completionLine: 7,      // consumer.ts: 'const alice: Person = { name: ...'
+            completionColumn: 26,   // after 'alice: Person = { ' (after opening brace)
+            workspaceSymbolQuery: 'Person',
+            supportsFormatting: true,
+            secondFile: path.join(__dirname, 'ts-project', 'src', 'consumer.ts'),
+            symbolName: 'Person',
+            ```
+
+            Note: For TypeScript go_to_definition, call the tool on consumer.ts at the
+            `add(1, 2)` call site, not example.ts. Store the call site file separately
+            as `callSiteFile`.
+
+            **Python** (fixtures/python/main.py — greeter.py now exists after Wave 1):
+            ```js
+            definitionLine: 1,      // 'def add(x: int, y: int) -> int:'
+            definitionColumn: 5,    // column of 'add'
+            callSiteLine: 15,       // '    result = add(1, 2)'
+            callSiteColumn: 14,     // column of 'add(' call
+            referenceLine: 4,       // 'class Person:'
+            referenceColumn: 7,     // column of 'Person'
+            completionLine: 14,     // '    print(p.greet())'  — after 'p.'
+            completionColumn: 13,   // column after 'p.' dot
+            workspaceSymbolQuery: 'Person',
+            supportsFormatting: false,   // pyright-langserver does not support formatting
+            secondFile: path.join(__dirname, 'fixtures/python', 'greeter.py'),
+            symbolName: 'Person',
+            ```
+
+            **Go** (fixtures/go/main.go — greeter.go now exists after Wave 1):
+            ```js
+            definitionLine: 16,     // 'func add(x, y int) int {'
+            definitionColumn: 6,    // column of 'add'
+            callSiteLine: 23,       // '    fmt.Println(add(1, 2))'
+            callSiteColumn: 17,     // column of 'add(' call
+            referenceLine: 6,       // 'type Person struct {'
+            referenceColumn: 6,     // column of 'Person'
+            completionLine: 22,     // '    fmt.Println(p.Greet())'  — after 'p.'
+            completionColumn: 19,   // column after 'p.' before 'Greet'
+            workspaceSymbolQuery: 'Person',
+            supportsFormatting: true,
+            secondFile: path.join(__dirname, 'fixtures/go', 'greeter.go'),
+            symbolName: 'Person',
+            ```
+
+            **Rust** (fixtures/rust/src/main.rs — modified by Agent C, greeter.rs exists):
+            After Agent C's changes, main.rs has `mod greeter;` inserted before `fn add`.
+            The new line numbers:
+            - Line 2: `pub struct Person {`
+            - Line 21: `fn add(...)` shifts because mod greeter is inserted at line 21 and fn add at 22
+            - Actually: insert `mod greeter;` as a blank line + declaration before fn add.
+
+            Use these positions (read actual file after Agent C's changes):
+            ```js
+            definitionLine: 22,     // 'fn add(x: i32, y: i32) -> i32 {' (after mod greeter insertion)
+            definitionColumn: 4,    // column of 'add'
+            callSiteLine: 29,       // 'println!("{}", add(1, 2));' (shifted +1 by mod greeter line)
+            callSiteColumn: 20,     // column of 'add(' call
+            referenceLine: 2,       // 'pub struct Person {'
+            referenceColumn: 12,    // column of 'Person'
+            completionLine: 27,     // 'let p = Person::new("Alice", 30);'  — after '::new'
+            completionColumn: 11,   // after 'p.' in next line or use p on line 28
+            workspaceSymbolQuery: 'Person',
+            supportsFormatting: true,
+            secondFile: path.join(__dirname, 'fixtures/rust', 'src', 'greeter.rs'),
+            symbolName: 'Person',
+            ```
+
+            IMPORTANT: After Agent C modifies main.rs, read the actual file to verify
+            line numbers before hardcoding them. Agent C inserts `mod greeter;` before
+            the original line 21. If Agent C adds a blank line too, all subsequent lines
+            shift by 2. Read and verify.
+
+            **Java** (fixtures/java/src/main/java/com/example/Person.java — Greeter.java exists):
+            ```js
+            definitionLine: 20,     // 'public static int add(int x, int y) {'
+            definitionColumn: 23,   // column of 'add'
+            callSiteLine: 27,       // 'System.out.println(add(1, 2));'
+            callSiteColumn: 28,     // column of 'add(' call
+            referenceLine: 6,       // 'public class Person {'
+            referenceColumn: 14,    // column of 'Person'
+            completionLine: 25,     // 'Person p = new Person("Alice", 30);'
+            completionColumn: 16,   // after 'new Person(' — triggers constructor completions
+            workspaceSymbolQuery: 'Person',
+            supportsFormatting: true,
+            secondFile: path.join(__dirname, 'fixtures/java', 'src', 'main', 'java', 'com', 'example', 'Greeter.java'),
+            symbolName: 'Person',
+            ```
+
+            **C** (fixtures/c/person.c — refactored by Agent F, person.h + greeter.c exist):
+            After Agent F's refactor, person.c no longer has the typedef. The test file
+            fixture path stays as `person.c` (same as current `lang.file`). Read actual
+            person.c after Agent F's changes to confirm line numbers.
+
+            Expected new person.c structure (from Agent F's task):
+            ```
+            Line 1: #include "person.h"
+            Line 2: (blank)
+            Line 3: Person create_person(const char *name, int age) {
+            Line 4:     Person p;
+            Line 5:     p.name = (char *)name;
+            Line 6:     p.age = age;
+            Line 7:     return p;
+            Line 8: }
+            Line 9: (blank)
+            Line 10: int add(int x, int y) {
+            Line 11:     return x + y;
+            Line 12: }
+            Line 13: (blank)
+            Line 14: int main(void) {
+            Line 15:     Person p = create_person("Alice", 30);
+            Line 16:     return add(1, 2);
+            Line 17: }
+            ```
+
+            ```js
+            definitionLine: 10,     // 'int add(int x, int y) {'
+            definitionColumn: 5,    // column of 'add'
+            callSiteLine: 16,       // '    return add(1, 2);'
+            callSiteColumn: 12,     // column of 'add(' call
+            referenceLine: 3,       // 'Person create_person(...)' — Person type usage
+            referenceColumn: 1,     // column of 'Person'
+            completionLine: 15,     // 'Person p = create_person("Alice", 30);'
+            completionColumn: 12,   // after 'p = ' — or use a member access in a helper
+            workspaceSymbolQuery: 'Person',
+            supportsFormatting: true,
+            secondFile: path.join(__dirname, 'fixtures/c', 'greeter.c'),
+            symbolName: 'Person',
+            declarationLine: 3,     // 'Person create_person(...)' in person.c — go_to_declaration resolves to person.h
+            declarationColumn: 1,   // column 1
+            ```
+
+            Also update the existing `file` field for C to point to `person.c` (unchanged),
+            and update `hoverLine` and `hoverColumn` since person.c no longer has the typedef
+            on line 7. After Agent F's changes:
+            - The typedef `} Person;` is in `person.h` line 9, not `person.c`
+            - For hover on `Person` in `person.c`, use line 3 (return type of create_person)
+            - Update C entry: `hoverLine: 3, hoverColumn: 1`
+
+            **PHP** (fixtures/php/Person.php — Greeter.php exists after Wave 1):
+            ```js
+            definitionLine: 20,     // 'public static function add(int $x, int $y): int {'
+            definitionColumn: 24,   // column of 'add'
+            callSiteLine: 27,       // 'echo Person::add(1, 2);'
+            callSiteColumn: 6,      // column of 'Person' in 'Person::add' (static call)
+            referenceLine: 6,       // 'class Person {'
+            referenceColumn: 7,     // column of 'Person'
+            completionLine: 26,     // '$p = new Person("Alice", 30);'  — after 'new Person('
+            completionColumn: 22,   // after '$p->greet()' first char of method
+            workspaceSymbolQuery: 'Person',
+            supportsFormatting: false,   // intelephense formatting is license-gated
+            secondFile: path.join(__dirname, 'fixtures/php', 'Greeter.php'),
+            symbolName: 'Person',
+            ```
+
+            ### Step 2: Add 7 new test functions before testLanguage()
+
+            Insert all 7 functions immediately before the `// Run tests for a single language`
+            comment (which precedes `async function testLanguage(lang) {`). This comment
+            appears on line 175 of the current file.
+
+            Insert after this exact text:
+            ```js
+            // Check if a binary is available on PATH; returns full path or null
+            function resolveBinary(binary) {
+              try {
+                const result = execSync(`which ${binary}`, { stdio: 'pipe' });
+                return result.toString().trim();
+              } catch {
+                return null;
+              }
+            }
+            ```
+
+            Add these functions (see interface_contracts for full signatures; implement
+            each with try/catch returning `{ tool, status, detail }`):
+
+            **testGetDocumentSymbols(client, lang)**
+            - Call `get_document_symbols` with `{ file_path: lang.file }`
+            - Parse result text as JSON array
+            - Assert array is non-empty
+            - Assert array contains an entry with `.name` matching `lang.symbolName`
+            - Return `{ tool: 'get_document_symbols', status: 'pass', detail: \`found ${arr.length} symbols\` }`
+            - On error: return `{ tool: 'get_document_symbols', status: 'fail', detail: err.message }`
+
+            **testGoToDefinition(client, lang)**
+            - Determine file and position: if `lang.callSiteFile` exists, use it; else use `lang.file`
+            - Call `go_to_definition` with `{ file_path: callFile, language_id: lang.id, line: lang.callSiteLine, column: lang.callSiteColumn }`
+            - Parse result as JSON (may be array or single location object)
+            - Assert result is non-null and non-empty
+            - Extract first location: check `uri` ends with expected filename
+            - Assert `range.start.line` is approximately `lang.definitionLine - 1` (LSP is 0-indexed)
+            - Return `{ tool: 'go_to_definition', status: 'pass', detail: \`found definition\` }`
+            - On error: return `{ tool: 'go_to_definition', status: 'fail', detail: err.message }`
+
+            **testGetReferences(client, lang)**
+            - If `lang.secondFile` is defined, open it via `open_document` first (call client.callTool
+              with `{ name: 'open_document', arguments: { file_path: lang.secondFile, language_id: lang.id } }`)
+              then wait 2000ms for indexing
+            - Call `get_references` with `{ file_path: lang.file, language_id: lang.id, line: lang.referenceLine, column: lang.referenceColumn, include_declaration: true }`
+            - Parse result as JSON array
+            - Assert length >= 2 if lang.secondFile exists, else >= 1
+            - Return `{ tool: 'get_references', status: 'pass', detail: \`found ${arr.length} references\` }`
+            - On error: return `{ tool: 'get_references', status: 'fail', detail: err.message }`
+
+            **testGetCompletions(client, lang)**
+            - Call `get_completions` with `{ file_path: lang.file, language_id: lang.id, line: lang.completionLine, column: lang.completionColumn }`
+            - Parse result as JSON array
+            - Assert array is non-empty
+            - Return `{ tool: 'get_completions', status: 'pass', detail: \`found ${arr.length} completions\` }`
+            - On error: return `{ tool: 'get_completions', status: 'fail', detail: err.message }`
+
+            **testGetWorkspaceSymbols(client, lang)**
+            - Call `get_workspace_symbols` with `{ query: lang.workspaceSymbolQuery }`
+            - Parse result as JSON array
+            - Assert array is non-empty
+            - Assert at least one entry has `.name` that includes lang.workspaceSymbolQuery
+              (use `includes()` to handle Go's "type Person struct" form)
+            - Return `{ tool: 'get_workspace_symbols', status: 'pass', detail: \`found ${arr.length} symbols\` }`
+            - On error: return `{ tool: 'get_workspace_symbols', status: 'fail', detail: err.message }`
+
+            **testFormatDocument(client, lang)**
+            - If `lang.supportsFormatting === false`, return `{ tool: 'format_document', status: 'skip', detail: 'formatting not supported' }`
+            - Call `format_document` with `{ file_path: lang.file, language_id: lang.id }`
+            - Parse result (may be empty array if already formatted)
+            - Return `{ tool: 'format_document', status: 'pass', detail: 'ok' }`
+            - On error: return `{ tool: 'format_document', status: 'fail', detail: err.message }`
+
+            **testGoToDeclaration(client, lang)**
+            - Only called for C. If `lang.id !== 'c'`, return skip immediately.
+            - Open person.h via `open_document` first: call with `{ file_path: path.join(lang.fixture, 'person.h'), language_id: 'c' }`
+            - Wait 1000ms
+            - Call `go_to_declaration` with `{ file_path: lang.file, language_id: lang.id, line: lang.declarationLine, column: lang.declarationColumn }`
+            - Parse result; assert URI ends with 'person.h'
+            - Return `{ tool: 'go_to_declaration', status: 'pass', detail: 'found declaration in person.h' }`
+            - On error: return `{ tool: 'go_to_declaration', status: 'fail', detail: err.message }`
+
+            ### Step 3: Update testLanguage() to call Tier 2 tests
+
+            In `testLanguage()`, after the existing step 4 (get_info_on_location hover),
+            add a Tier 2 block. Find this exact text to locate the insertion point:
+
+            ```js
+                const hoverText = hoverResult.content[0].text || '';
+                assert(hoverText.length > 0, 'hover info was empty');
+
+                // Capture a short snippet for the summary
+                result.hoverSnippet = hoverText.replace(/\n/g, ' ').substring(0, 60);
+                result.details = `diagnostics: ${result.diagnosticCount}, hover: "${result.hoverSnippet}"`;
+            ```
+
+            Insert immediately after that block (before the `} catch (err) {` block):
+
+            ```js
+                // Tier 2 tool tests
+                const tier2Results = [];
+
+                // 5. get_document_symbols
+                const symResult = await testGetDocumentSymbols(client, lang);
+                tier2Results.push(symResult);
+                console.log(`[${lang.name}] ${symResult.tool}: ${symResult.status} — ${symResult.detail}`);
+
+                // 6. go_to_definition
+                const defResult = await testGoToDefinition(client, lang);
+                tier2Results.push(defResult);
+                console.log(`[${lang.name}] ${defResult.tool}: ${defResult.status} — ${defResult.detail}`);
+
+                // 7. get_references
+                const refResult = await testGetReferences(client, lang);
+                tier2Results.push(refResult);
+                console.log(`[${lang.name}] ${refResult.tool}: ${refResult.status} — ${refResult.detail}`);
+
+                // 8. get_completions
+                const compResult = await testGetCompletions(client, lang);
+                tier2Results.push(compResult);
+                console.log(`[${lang.name}] ${compResult.tool}: ${compResult.status} — ${compResult.detail}`);
+
+                // 9. get_workspace_symbols
+                const wsResult = await testGetWorkspaceSymbols(client, lang);
+                tier2Results.push(wsResult);
+                console.log(`[${lang.name}] ${wsResult.tool}: ${wsResult.status} — ${wsResult.detail}`);
+
+                // 10. format_document (capability-gated)
+                const fmtResult = await testFormatDocument(client, lang);
+                tier2Results.push(fmtResult);
+                console.log(`[${lang.name}] ${fmtResult.tool}: ${fmtResult.status} — ${fmtResult.detail}`);
+
+                // 11. go_to_declaration (C only)
+                if (lang.id === 'c') {
+                  const declResult = await testGoToDeclaration(client, lang);
+                  tier2Results.push(declResult);
+                  console.log(`[${lang.name}] ${declResult.tool}: ${declResult.status} — ${declResult.detail}`);
+                }
+
+                result.tier2 = tier2Results;
+            ```
+
+            Also update the result object initialization at the top of testLanguage()
+            from:
+            ```js
+              details: '',
+              diagnosticCount: 0,
+              hoverSnippet: '',
+            ```
+            to:
+            ```js
+              details: '',
+              diagnosticCount: 0,
+              hoverSnippet: '',
+              tier2: [],
+            ```
+
+            ### Step 4: Replace printSummary() with the expanded table format
+
+            Replace the entire `printSummary(results)` function. Find this exact text:
+
+            ```js
+            // Print the summary table
+            function printSummary(results) {
+              console.log('\n');
+              console.log('Language     | Status | Details');
+              console.log('-------------|--------|' + '-'.repeat(60));
+
+              for (const r of results) {
+                const lang = r.name.padEnd(12);
+                const status = r.status.padEnd(6);
+                console.log(`${lang} | ${status} | ${r.details}`);
+              }
+
+              console.log('');
+            }
+            ```
+
+            Replace it with:
+
+            ```js
+            // Print the expanded summary table
+            function printSummary(results) {
+              console.log('\n');
+              console.log('Language     | T1 | symbols | definition | references | completions | workspace | format');
+              console.log('-------------|----|---------|-----------:|------------|-------------|-----------|-------');
+
+              for (const r of results) {
+                const lang = r.name.padEnd(12);
+                const t1 = r.status === 'PASS' ? ' ✓ ' : r.status === 'SKIP' ? ' - ' : ' ✗ ';
+                const toolStatus = (tool) => {
+                  if (!r.tier2 || r.tier2.length === 0) return '  -  ';
+                  const t = r.tier2.find(x => x.tool === tool);
+                  if (!t) return '  -  ';
+                  return t.status === 'pass' ? '  ✓  ' : t.status === 'skip' ? '  -  ' : '  ✗  ';
+                };
+                const sym = toolStatus('get_document_symbols');
+                const def = toolStatus('go_to_definition');
+                const ref = toolStatus('get_references');
+                const comp = toolStatus('get_completions');
+                const ws = toolStatus('get_workspace_symbols');
+                const fmt = toolStatus('format_document');
+                console.log(`${lang} |${t1}|${sym}|${def}|${ref}|${comp}|${ws}|${fmt}`);
+              }
+
+              console.log('');
+            }
+            ```
+
+            ### Verification gate
+
+            After making all changes, run:
+            ```
+            node --check test/multi-lang.test.js
+            ```
+            This validates the JavaScript syntax without executing the tests (which require
+            language servers to be installed).
+
+            Also verify:
+            - `grep -c "async function test" test/multi-lang.test.js` outputs `8`
+              (testLanguage + 7 new functions)
+            - `grep -n "tier2" test/multi-lang.test.js` shows entries in result init,
+              Tier 2 block, and printSummary
+            - `grep -n "secondFile" test/multi-lang.test.js` shows entries for all 7 languages
+            - `grep -n "supportsFormatting" test/multi-lang.test.js` shows entries for all 7 languages
+
+            ### Constraints
+            - Do NOT modify any fixture files under test/fixtures/ or test/ts-project/
+            - Do NOT modify package.json or any other files
+            - All 7 test functions must be self-contained (try/catch, never throw, always return {tool, status, detail})
+            - Use `lang.supportsFormatting === false` check (strict equality), not a truthy check
+            - For testGetReferences, always open secondFile before calling get_references when secondFile exists
+            - All JSON parsing of tool results must be wrapped in try/catch with a graceful fallback
+          files:
+            - test/multi-lang.test.js
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+            - E
+            - F
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: npm run build
+          required: true
+        - type: test
+          command: npm run test:multi-lang
+          required: false
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: |-
+            Agent C modifies main.rs with different line numbering than expected, causing
+            Agent G's hardcoded line numbers for Rust to be off by 1-2.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent G's task explicitly instructs it to READ the actual modified main.rs
+            before hardcoding Rust position metadata. Agent G should verify line numbers
+            from the file, not from the IMPL doc's estimates.
+        - scenario: |-
+            Agent F's compile_commands.json uses a hardcoded /placeholder directory
+            that clangd rejects, causing clangd to fail to index greeter.c and
+            go_to_declaration tests to fail.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            The fixture directory path needs to match or clangd must resolve includes
+            from the file's actual location. Agent F's task notes this as a known open
+            question (from the plan doc). The test for go_to_declaration is capability-
+            gated in testGoToDeclaration with a try/catch — it returns 'fail' not an
+            exception, so the overall test suite won't crash.
+        - scenario: |-
+            C fixture hover position breaks: after refactor, person.c line 7 no longer
+            has '} Person;' typedef, so the existing hoverLine: 7, hoverColumn: 3 for
+            the C language config becomes invalid.
+          likelihood: high
+          impact: high
+          mitigation: |-
+            Agent G's task explicitly addresses this: update C hoverLine to 3 and
+            hoverColumn to 1 (the 'Person create_person(...)' return type in new person.c).
+            This is specified in the C metadata section of Agent G's task.
+        - scenario: |-
+            Python get_references returns only 1 location because pyright-langserver
+            does not index across files unless the workspace is properly configured.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            The assertion allows >= 1 for languages where secondFile exists but the
+            server may not cross-index (a best-effort assertion). testGetReferences uses
+            >= 2 only when secondFile is defined AND the test can verify cross-file refs.
+            If pyright returns only 1, the test still passes with a note.
+            Actually, the task spec says >= 2 when secondFile — Agent G should make this
+            a warning-level assertion (log the count, soft-fail) for Python specifically,
+            or lower to >= 1 for Python. Document in detail field.
+        - scenario: |-
+            Rust completionLine/completionColumn in Agent G's task estimates are based
+            on pre-modification main.rs. After Agent C adds mod greeter + pub keywords,
+            line numbers shift and the completion trigger position is wrong.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent G must read test/fixtures/rust/src/main.rs AFTER Agent C's changes to
+            find the actual line of 'let p = Person::new(...)' and compute the correct
+            completion column. Agent G's task includes this explicit warning.
+        - scenario: |-
+            testGoToDefinition for TypeScript calls go_to_definition on lang.file (example.ts)
+            instead of consumer.ts, missing the cross-file call site scenario.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent G's task defines a callSiteFile field for TypeScript specifically and
+            instructs testGoToDefinition to check for lang.callSiteFile and use it if present.
+            The interface contract documents this pattern.
+        - scenario: |-
+            The get_completions position triggers no completions because the column
+            is before an expression rather than after a dot or opening paren.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            testGetCompletions has a permissive assertion (non-empty array). If the server
+            returns an empty completion list (not an error), the test fails with a clear
+            message. Agent G should choose completion positions carefully — after 'p.'
+            dot access or after '(' in function calls are the most reliable triggers.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief states the resulting main.rs will have pub fn new at line 7, but the current file has fn new at line 8 (impl Person block opens at line 7). After adding pub, the line remains 8, not 7. This is a description error; the actual instruction (add pub to fn new) is correct.
+                  file: test/fixtures/rust/src/main.rs
+                  symbol: fn new
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief states the resulting main.rs will have pub fn greet at line 15, but the current file has fn greet at line 16. After adding pub, the line remains 16. This is a description error; the actual instruction (add pub to fn greet) is correct.
+                  file: test/fixtures/rust/src/main.rs
+                  symbol: fn greet
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: PASS
+    summary: 'All 7 agent briefs verified against the codebase. File existence checks pass for all action:new and action:modify entries. Position metadata in Agent G''s brief is accurate against the actual fixture files (Go, Python, Java, PHP all checked line-by-line). Agent C''s brief has two minor description inaccuracies: the stated resulting line numbers for pub fn new (says line 7, actual line 8) and pub fn greet (says line 15, actual line 16) are off by 1, but the implementation instructions themselves (add pub keywords, insert mod greeter;) are correct and unambiguous. Pattern accuracy for Agent G''s insertion points is exact — the anchor text blocks in the brief match the actual multi-lang.test.js file content. No missing callers, no disjoint ownership violations, no import chain issues, and no complexity imbalances.'
+    reviewed_at: "2026-04-06T06:22:35Z"
+    issue_count: 2
+state: SCOUT_PENDING
+injection_method: hook
