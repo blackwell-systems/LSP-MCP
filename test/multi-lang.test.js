@@ -64,9 +64,9 @@ const LANGUAGES = [
     id: 'java',
     binary: 'jdtls',
     serverArgs: [],
-    fixture: path.join(__dirname, 'fixtures/java'),  // jdtls needs project root, not src/
-    file: path.join(__dirname, 'fixtures/java', 'src', 'Person.java'),
-    hoverLine: 4,     // line with 'public class Person'
+    fixture: path.join(__dirname, 'fixtures/java'),  // jdtls needs project root with pom.xml
+    file: path.join(__dirname, 'fixtures/java', 'src', 'main', 'java', 'com', 'example', 'Person.java'),
+    hoverLine: 5,     // line with 'public class Person' (shifted +1 by package declaration)
     hoverColumn: 14,  // column on 'Person'
   },
   {

@@ -1,3 +1,5 @@
+package com.example;
+
 /**
  * A person with a name and age.
  */
