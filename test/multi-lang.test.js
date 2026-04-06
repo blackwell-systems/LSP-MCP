@@ -115,6 +115,7 @@ const LANGUAGES = [
     binary: 'jdtls',
     serverArgs: ['-data', '/tmp/jdtls-workspace-lsp-mcp-test'],
     logLevel: 'notice',  // verbose so crashes surface in CI
+    javaHome: '/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home',
     fixture: path.join(__dirname, 'fixtures/java'),  // jdtls needs project root with pom.xml
     file: path.join(__dirname, 'fixtures/java', 'src', 'main', 'java', 'com', 'example', 'Person.java'),
     hoverLine: 5,     // line with 'public class Person' (shifted +1 by package declaration)
@@ -490,8 +491,10 @@ async function testLanguage(lang) {
     const spawnArgs = [LSP_MCP_SERVER, lang.id, binaryPath, ...lang.serverArgs];
     console.log(`\n[${lang.name}] Starting MCP server: node ${spawnArgs.join(' ')}`);
 
+    const spawnEnv = { ...process.env, LOG_LEVEL: lang.logLevel || 'error' };
+    if (lang.javaHome) spawnEnv.JAVA_HOME = lang.javaHome;
     serverProcess = spawn('node', spawnArgs, {
-      env: { ...process.env, LOG_LEVEL: lang.logLevel || 'error' },
+      env: spawnEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -528,8 +531,8 @@ async function testLanguage(lang) {
     });
     assert(startResult.content && startResult.content.length > 0, 'start_lsp returned no content');
 
-    // Wait for LSP to initialize (jdtls needs ~90s; others need ~4s)
-    const initWait = lang.id === 'java' ? 90000 : 4000;
+    // Wait for LSP to initialize (jdtls needs ~120s; others need ~4s)
+    const initWait = lang.id === 'java' ? 120000 : 4000;
     await new Promise(resolve => setTimeout(resolve, initWait));
 
     // 2. open_document
