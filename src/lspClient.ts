@@ -64,6 +64,15 @@ export class LSPClient {
 
     this.process.on("close", (code: number) => {
       notice(`LSP server process exited with code ${code}`);
+      this.initialized = false;
+      // Reject all pending requests so callers fail fast instead of waiting for timeouts
+      if (this.responsePromises.size > 0) {
+        const exitError = new Error(`LSP server process exited with code ${code}`);
+        for (const [id, promise] of this.responsePromises) {
+          promise.reject(exitError);
+          this.responsePromises.delete(id);
+        }
+      }
     });
   }
 
