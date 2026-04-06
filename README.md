@@ -6,7 +6,7 @@
 [![Languages](https://img.shields.io/badge/languages-7_verified-green.svg)](#multi-language-support)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The most complete MCP server for language intelligence. **19 tools** covering navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
+The most complete MCP server for language intelligence. **22 tools** covering navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
 
 Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session** — agents operate on a fully indexed workspace with real-time diagnostics and cross-file awareness, not a cold-started stub that forgets context between calls.
 
@@ -15,7 +15,7 @@ Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server
 | | lsp-mcp | typical alternatives |
 |--|---------|---------------------|
 | Languages (CI-verified) | **7** | 1–2 |
-| Tools | **19** | 3–5 |
+| Tools | **22** | 3–5 |
 | LSP spec compliance | **3.17, built to spec** | ad hoc |
 | Connection model | **persistent** | per-request |
 | Cross-file references | **✓** | rarely |
@@ -95,12 +95,15 @@ All tools require `start_lsp` to be called first.
 | `go_to_definition` | Jump to where a symbol is defined |
 | `go_to_type_definition` | Jump to the type definition of a symbol |
 | `go_to_implementation` | Jump to all implementations of an interface or abstract method |
+| `go_to_declaration` | Jump to the declaration of a symbol (distinct from definition — e.g. C/C++ headers) |
 
 ### Refactoring
 | Tool | Description |
 |------|-------------|
 | `rename_symbol` | Get a `WorkspaceEdit` for renaming a symbol across the workspace |
+| `prepare_rename` | Validate a rename is possible before committing |
 | `format_document` | Get `TextEdit[]` formatting edits for a file |
+| `apply_edit` | Apply a `WorkspaceEdit` to disk (use with `rename_symbol` or `format_document`) |
 | `execute_command` | Execute a server-side command (e.g. from a code action) |
 
 ### Utilities

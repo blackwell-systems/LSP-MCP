@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `apply_edit` tool — applies a `WorkspaceEdit` (from `rename_symbol` or `format_document`) directly to disk; sends `textDocument/didChange` for each modified file so the LSP server sees the updates
+- `go_to_declaration` tool — `textDocument/declaration`, completes the "go to X" navigation family (distinct from definition — e.g. C/C++ header declarations)
+- `prepare_rename` tool — `textDocument/prepareRename`, validates a rename is possible at a position before calling `rename_symbol`
 - `go_to_type_definition` tool — `textDocument/typeDefinition`, same normalization as `go_to_definition`
 - `go_to_implementation` tool — `textDocument/implementation`, jumps to all implementations of an interface or abstract method
 - `execute_command` tool — `workspace/executeCommand`, executes server-side commands returned by code actions

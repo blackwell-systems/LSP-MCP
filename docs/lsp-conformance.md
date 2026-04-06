@@ -28,8 +28,8 @@ Every LSP 3.17 method and its MCP surface. "Protocol only" means the method is c
 | `textDocument/rename` | §3.15.19 | `rename_symbol` | ✓ |
 | `textDocument/typeDefinition` | §3.15.3 | `go_to_type_definition` | ✓ |
 | `textDocument/implementation` | §3.15.4 | `go_to_implementation` | ✓ |
-| `textDocument/declaration` | §3.15.5 | — | ✗ not yet implemented |
-| `textDocument/prepareRename` | §3.15.19 | — | ✗ not yet implemented |
+| `textDocument/declaration` | §3.15.5 | `go_to_declaration` | ✓ |
+| `textDocument/prepareRename` | §3.15.19 | `prepare_rename` | ✓ |
 | `textDocument/selectionRange` | §3.15.29 | — | ✗ not yet implemented |
 | `textDocument/foldingRange` | §3.15.28 | — | ✗ not yet implemented |
 | `textDocument/documentHighlight` | §3.15.10 | — | ✗ not yet implemented |
