@@ -336,7 +336,7 @@ export class LSPClient {
 
   // Timeout per request type (ms). References require full workspace indexing.
   private static readonly REQUEST_TIMEOUTS: Record<string, number> = {
-    "initialize": 120000,           // JVM-based servers (jdtls) take 60-90s on cold start
+    "initialize": 300000,           // JVM-based servers (jdtls) take 60-90s on cold start; CI runners can be slower
     "textDocument/references": 120000,
     "textDocument/hover": 30000,
     "textDocument/completion": 30000,
@@ -513,7 +513,7 @@ export class LSPClient {
       notice("LSP connection initialized successfully");
     } catch (err) {
       error("Failed to initialize LSP connection:", err);
-      throw error;
+      throw err;
     }
   }
 
