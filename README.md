@@ -140,6 +140,18 @@ get_info_on_location(...) / get_references(...)
 close_document(...)
 ```
 
+**Keeping the index fresh during active editing:**
+
+Without notifying the language server of file changes, its index becomes stale immediately — `get_references`, `get_diagnostics`, and hover info will reflect the old state, not what was just written. After every file edit, call:
+
+```
+did_change_watched_files(changes=[
+  { uri: "file:///absolute/path/to/file.ts", type: 2 }
+])
+```
+
+Type values: `1` = created, `2` = changed, `3` = deleted. The server re-reads from disk and updates its index — no restart required. In long sessions where files change frequently, this is the difference between a reliable index and silently stale results.
+
 **Rename workflow** (`prepare_rename` → `rename_symbol` → `apply_edit`):
 ```
 prepare_rename(file_path=..., line=..., column=...)   # confirm rename is valid at this position
