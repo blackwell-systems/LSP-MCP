@@ -60,5 +60,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD pipeline via GitHub Actions
 - Server-initiated LSP request handling (window/workDoneProgress/create, workspace/configuration, client/registerCapability)
 
-[Unreleased]: https://github.com/blackwell-systems/lsp-mcp-improved/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/blackwell-systems/lsp-mcp-improved/releases/tag/v0.3.0
+[Unreleased]: https://github.com/blackwell-systems/LSP-MCP/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/blackwell-systems/LSP-MCP/releases/tag/v0.3.0

@@ -55,7 +55,7 @@ docker run --rm -i -v /your/project:/workspace lsp-mcp haskell haskell-language-
 Or extend the Dockerfile to install your language server:
 
 ```dockerfile
-FROM ghcr.io/blackwell-systems/lsp-mcp:latest
+FROM ghcr.io/blackwell-systems/LSP-MCP:latest
 USER root
 RUN apk add --no-cache rust-analyzer
 USER lsp

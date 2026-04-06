@@ -15,7 +15,7 @@ Add to your MCP client configuration:
       "type": "stdio",
       "command": "npx",
       "args": [
-        "blackwell-systems/lsp-mcp-improved",
+        "blackwell-systems/LSP-MCP",
         "<language-id>",
         "<path-to-lsp-binary>",
         "<lsp-args>"
@@ -32,7 +32,7 @@ Add to your MCP client configuration:
     "lsp": {
       "type": "stdio",
       "command": "npx",
-      "args": ["blackwell-systems/lsp-mcp-improved", "typescript", "typescript-language-server", "--stdio"]
+      "args": ["blackwell-systems/LSP-MCP", "typescript", "typescript-language-server", "--stdio"]
     }
   }
 }
@@ -45,7 +45,7 @@ Add to your MCP client configuration:
     "lsp": {
       "type": "stdio",
       "command": "npx",
-      "args": ["blackwell-systems/lsp-mcp-improved", "haskell", "haskell-language-server-wrapper", "lsp"]
+      "args": ["blackwell-systems/LSP-MCP", "haskell", "haskell-language-server-wrapper", "lsp"]
     }
   }
 }
@@ -248,8 +248,8 @@ All extension-provided features are namespaced by language ID (e.g. `haskell.typ
 ## Development
 
 ```bash
-git clone https://github.com/blackwell-systems/lsp-mcp-improved.git
-cd lsp-mcp-improved
+git clone https://github.com/blackwell-systems/LSP-MCP.git
+cd LSP-MCP
 npm install
 npm run build
 ```
