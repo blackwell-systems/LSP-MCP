@@ -60,6 +60,12 @@ jobs:
         with:
           components: rust-analyzer
       - name: Install jdtls
-        run: pip install jdtls
+        run: |
+          JDTLS_VERSION=$(curl -s https://api.github.com/repos/eclipse-jdtls/eclipse.jdt.ls/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+          wget -q "https://download.eclipse.org/jdtls/milestones/${JDTLS_VERSION}/jdt-language-server-${JDTLS_VERSION}.tar.gz" -O /tmp/jdtls.tar.gz
+          sudo mkdir -p /opt/jdtls
+          sudo tar -xzf /tmp/jdtls.tar.gz -C /opt/jdtls
+          printf '#!/bin/bash\njava --add-modules=ALL-SYSTEM --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -jar /opt/jdtls/plugins/org.eclipse.equinox.launcher_*.jar -configuration /opt/jdtls/config_linux -data /tmp/jdtls-data "$@"\n' | sudo tee /usr/local/bin/jdtls > /dev/null
+          sudo chmod +x /usr/local/bin/jdtls
       - name: Run multi-language tests
         run: npm run test:multi-lang
