@@ -19,6 +19,7 @@ Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server
 | Connection model | **persistent** | per-request |
 | MCP resource subscriptions | **✓ real-time diagnostics** | ✗ |
 | `get_references` (cross-file) | **✓** | rarely |
+| Tools | **16** | 3–5 |
 | Test coverage | **76% statements, 86% functions** | rarely tested |
 
 ## Quick Start
@@ -79,6 +80,12 @@ All tools require `start_lsp` to be called first.
 | `get_completions` | Completion suggestions at a position |
 | `get_code_actions` | Quick fixes and refactors for a range |
 | `get_references` | All references to a symbol across the workspace |
+| `go_to_definition` | Jump to the definition of a symbol |
+| `get_document_symbols` | All symbols in a file (functions, classes, variables) |
+| `get_workspace_symbols` | Search symbols by name across the workspace |
+| `get_signature_help` | Function signature and active parameter at a call site |
+| `format_document` | Formatting edits for a file (returned for inspection, not applied) |
+| `rename_symbol` | WorkspaceEdit for renaming a symbol across the workspace (returned for inspection, not applied) |
 | `set_log_level` | Change log verbosity at runtime |
 
 **Recommended agent workflow:**
