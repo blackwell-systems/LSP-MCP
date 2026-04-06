@@ -26,8 +26,8 @@ Every LSP 3.17 method and its MCP surface. "Protocol only" means the method is c
 | `textDocument/codeAction` | §3.15.22 | `get_code_actions` | ✓ |
 | `textDocument/formatting` | §3.15.16 | `format_document` | ✓ |
 | `textDocument/rename` | §3.15.19 | `rename_symbol` | ✓ |
-| `textDocument/typeDefinition` | §3.15.3 | — | ✗ capability declared, tool pending |
-| `textDocument/implementation` | §3.15.4 | — | ✗ capability declared, tool pending |
+| `textDocument/typeDefinition` | §3.15.3 | `go_to_type_definition` | ✓ |
+| `textDocument/implementation` | §3.15.4 | `go_to_implementation` | ✓ |
 | `textDocument/declaration` | §3.15.5 | — | ✗ not yet implemented |
 | `textDocument/prepareRename` | §3.15.19 | — | ✗ not yet implemented |
 | `textDocument/selectionRange` | §3.15.29 | — | ✗ not yet implemented |
@@ -44,7 +44,7 @@ Every LSP 3.17 method and its MCP surface. "Protocol only" means the method is c
 |-----------|------|----------|--------|
 | `workspace/symbol` | §3.15.21 | `get_workspace_symbols` | ✓ |
 | `workspace/configuration` | §3.16.14 | — | ✓ protocol only (server-initiated) |
-| `workspace/executeCommand` | §3.16.13 | — | ✗ not yet implemented |
+| `workspace/executeCommand` | §3.16.13 | `execute_command` | ✓ |
 | `workspace/didChangeWatchedFiles` | §3.16.8 | — | ✗ capability declared only |
 
 ### Protocol Infrastructure

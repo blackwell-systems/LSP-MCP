@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `go_to_type_definition` tool — `textDocument/typeDefinition`, same normalization as `go_to_definition`
+- `go_to_implementation` tool — `textDocument/implementation`, jumps to all implementations of an interface or abstract method
+- `execute_command` tool — `workspace/executeCommand`, executes server-side commands returned by code actions
 - `go_to_definition` tool — `textDocument/definition`, normalizes `LocationLink[]` to `Location[]`
 - `get_document_symbols` tool — `textDocument/documentSymbol`, returns both `DocumentSymbol[]` tree and `SymbolInformation[]` flat shapes as-is
 - `get_workspace_symbols` tool — `workspace/symbol`, cross-file symbol search by query string
