@@ -1,0 +1,985 @@
+title: LSP 3.17 Missing Methods as MCP Tools
+feature_slug: lsp-missing-methods
+verdict: SUITABLE
+suitability_assessment: |
+    All six LSP 3.17 methods are absent from both src/lspClient.ts and src/tools/index.ts.
+    Each method follows the identical pattern established by hover, completion, references,
+    and codeAction: (1) capability check, (2) sendRequest<T>, (3) Zod schema in types/index.ts,
+    (4) named handler function in tools/index.ts, (5) entry in getToolHandlers and
+    getToolDefinitions. No investigation is needed; the pattern is fully defined.
+
+    File decomposition is clean: Agent A owns src/lspClient.ts (adds 6 LSP client methods
+    and 4 client capability declarations to initialize()); Agent B owns src/types/index.ts
+    and src/tools/index.ts (adds schemas, handlers, handler registrations, and tool
+    definitions). No file is shared between agents. index.ts (root) requires NO changes
+    — tool handlers are auto-discovered via getToolHandlers().
+
+    Estimated times:
+    - Scout phase: ~15 min (codebase analysis + IMPL doc)
+    - Agent execution: ~20 min (2 agents x ~10 min avg, running in parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~40 min
+
+    Sequential baseline: ~30 min (2 agents x 15 min sequential)
+    Time savings: Parallel execution saves ~10 min. Clear speedup; also provides
+    interface spec as audit trail.
+
+    Recommendation: Proceed with parallel execution.
+test_command: npm test
+lint_command: npx tsc --noEmit
+file_ownership:
+    - file: src/lspClient.ts
+      agent: A
+      wave: 1
+      action: modify
+    - file: src/types/index.ts
+      agent: B
+      wave: 2
+      action: modify
+    - file: src/tools/index.ts
+      agent: B
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: getDefinition
+      description: |-
+        LSP textDocument/definition — returns locations where a symbol is defined.
+        Returns Location[] or LocationLink[] depending on server; normalized to Location[].
+      definition: |
+        async getDefinition(
+          uri: string,
+          position: { line: number; character: number },
+        ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>>
+      location: src/lspClient.ts
+    - name: getDocumentSymbols
+      description: |-
+        LSP textDocument/documentSymbol — returns either DocumentSymbol[] (hierarchical tree)
+        or SymbolInformation[] (flat list). Both shapes must be handled and returned as-is
+        for the caller to interpret.
+      definition: |
+        async getDocumentSymbols(
+          uri: string,
+        ): Promise<any[]>
+      location: src/lspClient.ts
+    - name: getWorkspaceSymbols
+      description: |-
+        LSP workspace/symbol — searches all indexed symbols by query string.
+        Returns SymbolInformation[] or WorkspaceSymbol[].
+      definition: |
+        async getWorkspaceSymbols(
+          query: string,
+        ): Promise<any[]>
+      location: src/lspClient.ts
+    - name: getSignatureHelp
+      description: |-
+        LSP textDocument/signatureHelp — returns active signature overloads and
+        active parameter index at a call site position.
+      definition: |
+        async getSignatureHelp(
+          uri: string,
+          position: { line: number; character: number },
+        ): Promise<any | null>
+      location: src/lspClient.ts
+    - name: formatDocument
+      description: |-
+        LSP textDocument/formatting — returns TextEdit[] describing how to reformat
+        the entire document. The edits are returned for agent inspection; not applied
+        automatically.
+      definition: |
+        async formatDocument(
+          uri: string,
+          options: { tabSize: number; insertSpaces: boolean },
+        ): Promise<any[]>
+      location: src/lspClient.ts
+    - name: renameSymbol
+      description: |-
+        LSP textDocument/rename — returns a WorkspaceEdit describing all changes
+        needed to rename a symbol across the workspace. The edit is returned for
+        agent inspection; not applied automatically.
+      definition: |
+        async renameSymbol(
+          uri: string,
+          position: { line: number; character: number },
+          newName: string,
+        ): Promise<any | null>
+      location: src/lspClient.ts
+    - name: GoToDefinitionArgsSchema
+      description: Zod schema for go_to_definition tool arguments
+      definition: |
+        export const GoToDefinitionArgsSchema = z.object({
+          file_path: z.string().describe("Path to the file containing the symbol"),
+          language_id: z.string().describe("The programming language the file is written in"),
+          line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+          column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+        });
+      location: src/types/index.ts
+    - name: GetDocumentSymbolsArgsSchema
+      description: Zod schema for get_document_symbols tool arguments
+      definition: |
+        export const GetDocumentSymbolsArgsSchema = z.object({
+          file_path: z.string().describe("Path to the file"),
+          language_id: z.string().describe("The programming language the file is written in"),
+        });
+      location: src/types/index.ts
+    - name: GetWorkspaceSymbolsArgsSchema
+      description: Zod schema for get_workspace_symbols tool arguments
+      definition: |
+        export const GetWorkspaceSymbolsArgsSchema = z.object({
+          query: z.string().describe("Search query string to filter workspace symbols"),
+        });
+      location: src/types/index.ts
+    - name: GetSignatureHelpArgsSchema
+      description: Zod schema for get_signature_help tool arguments
+      definition: |
+        export const GetSignatureHelpArgsSchema = z.object({
+          file_path: z.string().describe("Path to the file"),
+          language_id: z.string().describe("The programming language the file is written in"),
+          line: z.coerce.number().describe("Line number of the call site (1-based)"),
+          column: z.coerce.number().describe("Column position inside the argument list (1-based)"),
+        });
+      location: src/types/index.ts
+    - name: FormatDocumentArgsSchema
+      description: Zod schema for format_document tool arguments
+      definition: |
+        export const FormatDocumentArgsSchema = z.object({
+          file_path: z.string().describe("Path to the file to format"),
+          language_id: z.string().describe("The programming language the file is written in"),
+          tab_size: z.coerce.number().optional().default(2).describe("Number of spaces per tab"),
+          insert_spaces: z.boolean().optional().default(true).describe("Use spaces instead of tabs"),
+        });
+      location: src/types/index.ts
+    - name: RenameSymbolArgsSchema
+      description: Zod schema for rename_symbol tool arguments
+      definition: |
+        export const RenameSymbolArgsSchema = z.object({
+          file_path: z.string().describe("Path to the file containing the symbol to rename"),
+          language_id: z.string().describe("The programming language the file is written in"),
+          line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+          column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+          new_name: z.string().describe("The new name for the symbol"),
+        });
+      location: src/types/index.ts
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are working in the LSP-MCP repo at /Users/dayna.blackwell/code/LSP-MCP.
+            This is a TypeScript MCP server that bridges LSP and MCP. Your job is to add
+            6 new LSP client methods to src/lspClient.ts and expand the client capabilities
+            declared in the initialize() call.
+
+            ## What to implement
+
+            ### 1. Add 4 capability declarations to the initialize() call
+
+            In `src/lspClient.ts`, locate the `initialize()` method and find the
+            `capabilities:` block. The existing block declares definition, implementation,
+            typeDefinition, codeAction, etc. Add 4 new entries inside
+            `capabilities.textDocument`:
+
+            Insert after this exact text (inside the textDocument block, after codeAction):
+            ```typescript
+                    codeAction: {
+                      dynamicRegistration: true,
+                    },
+            ```
+
+            Add immediately after that block (before `diagnostic:`):
+            ```typescript
+                    signatureHelp: {
+                      signatureInformation: {
+                        parameterInformation: {
+                          labelOffsetSupport: true,
+                        },
+                      },
+                    },
+                    documentSymbol: {
+                      hierarchicalDocumentSymbolSupport: true,
+                    },
+                    rename: {
+                      prepareSupport: false,
+                    },
+                    formatting: {},
+            ```
+
+            ### 2. Add REQUEST_TIMEOUTS entries for new methods
+
+            In the `REQUEST_TIMEOUTS` static record (around line 338-344), add entries for
+            the 4 new potentially slow methods. Insert after this exact text:
+            ```typescript
+                "textDocument/codeAction": 30000,
+            ```
+            Add:
+            ```typescript
+                "textDocument/definition": 30000,
+                "textDocument/documentSymbol": 30000,
+                "workspace/symbol": 30000,
+                "textDocument/signatureHelp": 30000,
+                "textDocument/formatting": 30000,
+                "textDocument/rename": 30000,
+            ```
+
+            ### 3. Add method: getDefinition
+
+            Insert all 6 new methods immediately before the comment line
+            `// Reopen a specific document to get latest content from disk` in src/lspClient.ts.
+            The first new method (getDefinition) follows the same capability-check pattern
+            as the existing code-actions method.
+
+            Implementation:
+            ```typescript
+              async getDefinition(
+                uri: string,
+                position: { line: number; character: number },
+              ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Getting definition at location: ${uri} (${position.line}:${position.character})`);
+
+                if (!this.serverCapabilities?.definitionProvider) {
+                  debug("Server does not declare definitionProvider capability — skipping definition request");
+                  return [];
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("textDocument/definition", {
+                    textDocument: { uri },
+                    position,
+                  });
+
+                  if (Array.isArray(response)) {
+                    // Normalize LocationLink[] to Location[] if needed
+                    return response.map((loc: any) => {
+                      if (loc.targetUri) {
+                        // LocationLink shape — map to Location
+                        return { uri: loc.targetUri, range: loc.targetRange };
+                      }
+                      return loc;
+                    });
+                  } else if (response && response.uri) {
+                    // Single Location
+                    return [response];
+                  }
+                } catch (err) {
+                  warning(`Error getting definition: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return [];
+              }
+            ```
+
+            ### 4. Add method: getDocumentSymbols
+
+            Add after getDefinition. Capability key: `this.serverCapabilities?.documentSymbolProvider`.
+            Returns the raw response (either DocumentSymbol[] tree or SymbolInformation[] flat) — both
+            shapes are valid LSP responses and should be returned as-is for the tool handler to forward
+            to the MCP client.
+
+            Implementation:
+            ```typescript
+              async getDocumentSymbols(
+                uri: string,
+              ): Promise<any[]> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Getting document symbols for: ${uri}`);
+
+                if (!this.serverCapabilities?.documentSymbolProvider) {
+                  debug("Server does not declare documentSymbolProvider capability — skipping documentSymbol request");
+                  return [];
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("textDocument/documentSymbol", {
+                    textDocument: { uri },
+                  });
+
+                  if (Array.isArray(response)) {
+                    return response;
+                  }
+                } catch (err) {
+                  warning(`Error getting document symbols: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return [];
+              }
+            ```
+
+            ### 5. Add method: getWorkspaceSymbols
+
+            Add after getDocumentSymbols. This method uses `workspace/symbol` not
+            `textDocument/symbol`. Capability key: `this.serverCapabilities?.workspaceSymbolProvider`.
+            Takes a query string, not a URI+position.
+
+            Implementation:
+            ```typescript
+              async getWorkspaceSymbols(
+                query: string,
+              ): Promise<any[]> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Getting workspace symbols for query: "${query}"`);
+
+                if (!this.serverCapabilities?.workspaceSymbolProvider) {
+                  debug("Server does not declare workspaceSymbolProvider capability — skipping workspace/symbol request");
+                  return [];
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("workspace/symbol", {
+                    query,
+                  });
+
+                  if (Array.isArray(response)) {
+                    return response;
+                  }
+                } catch (err) {
+                  warning(`Error getting workspace symbols: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return [];
+              }
+            ```
+
+            ### 6. Add method: getSignatureHelp
+
+            Add after getWorkspaceSymbols. Capability key: `this.serverCapabilities?.signatureHelpProvider`.
+            Returns raw SignatureHelp object or null if no signature context.
+
+            Implementation:
+            ```typescript
+              async getSignatureHelp(
+                uri: string,
+                position: { line: number; character: number },
+              ): Promise<any | null> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Getting signature help at location: ${uri} (${position.line}:${position.character})`);
+
+                if (!this.serverCapabilities?.signatureHelpProvider) {
+                  debug("Server does not declare signatureHelpProvider capability — skipping signatureHelp request");
+                  return null;
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("textDocument/signatureHelp", {
+                    textDocument: { uri },
+                    position,
+                  });
+
+                  return response ?? null;
+                } catch (err) {
+                  warning(`Error getting signature help: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return null;
+              }
+            ```
+
+            ### 7. Add method: formatDocument
+
+            Add after getSignatureHelp. Capability key: `this.serverCapabilities?.documentFormattingProvider`.
+            Returns TextEdit[] (edits to apply to format the document). Returns empty array if no edits.
+
+            Implementation:
+            ```typescript
+              async formatDocument(
+                uri: string,
+                options: { tabSize: number; insertSpaces: boolean },
+              ): Promise<any[]> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Formatting document: ${uri}`);
+
+                if (!this.serverCapabilities?.documentFormattingProvider) {
+                  debug("Server does not declare documentFormattingProvider capability — skipping formatting request");
+                  return [];
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("textDocument/formatting", {
+                    textDocument: { uri },
+                    options,
+                  });
+
+                  if (Array.isArray(response)) {
+                    return response;
+                  }
+                } catch (err) {
+                  warning(`Error formatting document: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return [];
+              }
+            ```
+
+            ### 8. Add method: renameSymbol
+
+            Add after formatDocument (before the reopenDocument method). Capability key:
+            `this.serverCapabilities?.renameProvider`. Returns WorkspaceEdit object or
+            null if rename is not possible.
+
+            Implementation:
+            ```typescript
+              async renameSymbol(
+                uri: string,
+                position: { line: number; character: number },
+                newName: string,
+              ): Promise<any | null> {
+                if (!this.initialized) {
+                  throw new Error("LSP server not initialized yet");
+                }
+
+                debug(`Renaming symbol at: ${uri} (${position.line}:${position.character}) to "${newName}"`);
+
+                if (!this.serverCapabilities?.renameProvider) {
+                  debug("Server does not declare renameProvider capability — skipping rename request");
+                  return null;
+                }
+
+                try {
+                  const response = await this.sendRequest<any>("textDocument/rename", {
+                    textDocument: { uri },
+                    position,
+                    newName,
+                  });
+
+                  return response ?? null;
+                } catch (err) {
+                  warning(`Error renaming symbol: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                return null;
+              }
+            ```
+
+            ## Verification gate
+
+            1. Build passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npm run build
+               ```
+               Expected: exit 0, no TypeScript errors.
+
+            2. Type check passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npx tsc --noEmit
+               ```
+               Expected: exit 0.
+
+            3. Postconditions — all 6 methods exist in src/lspClient.ts:
+               ```
+               grep -c "async getDefinition\|async getDocumentSymbols\|async getWorkspaceSymbols\|async getSignatureHelp\|async formatDocument\|async renameSymbol" /Users/dayna.blackwell/code/LSP-MCP/src/lspClient.ts
+               ```
+               Expected output: 6
+
+            4. Capability declarations added:
+               ```
+               grep -c "signatureHelp\|documentSymbol\|rename:\|formatting:" /Users/dayna.blackwell/code/LSP-MCP/src/lspClient.ts
+               ```
+               Expected output: 4 or more (each capability declaration + usage in methods).
+
+            ## Constraints
+
+            - Do NOT modify src/types/index.ts — that file is owned by Agent B.
+            - Do NOT modify src/tools/index.ts — that file is owned by Agent B.
+            - Do NOT modify index.ts — no wiring changes needed there.
+            - Do NOT add stub Zod schemas or tool handlers in lspClient.ts — schemas live in types/index.ts.
+            - Insert new methods in the order listed (getDefinition, getDocumentSymbols,
+              getWorkspaceSymbols, getSignatureHelp, formatDocument, renameSymbol)
+              immediately before the `// Reopen a specific document` comment to keep the file organized.
+            - The `getWorkspaceSymbols` method uses `workspace/symbol` (NOT `textDocument/...`);
+              do not prepend textDocument/ to that method name.
+          files:
+            - src/lspClient.ts
+          context_source: prepared-brief
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## Context
+
+            You are working in the LSP-MCP repo at /Users/dayna.blackwell/code/LSP-MCP.
+            This is a TypeScript MCP server that bridges LSP and MCP. Your job is to add
+            6 new Zod schemas to src/types/index.ts and 6 new tool handlers + definitions
+            to src/tools/index.ts.
+
+            The LSPClient methods you will call were added by Agent A in Wave 1.
+            The method signatures are binding contracts — use them exactly as specified.
+
+            ## LSPClient method signatures (from Agent A)
+
+            ```typescript
+            // In LSPClient class (src/lspClient.ts):
+            async getDefinition(uri: string, position: { line: number; character: number }): Promise<Array<{...}>>
+            async getDocumentSymbols(uri: string): Promise<any[]>
+            async getWorkspaceSymbols(query: string): Promise<any[]>
+            async getSignatureHelp(uri: string, position: { line: number; character: number }): Promise<any | null>
+            async formatDocument(uri: string, options: { tabSize: number; insertSpaces: boolean }): Promise<any[]>
+            async renameSymbol(uri: string, position: { line: number; character: number }, newName: string): Promise<any | null>
+            ```
+
+            ## Step 1: Add schemas to src/types/index.ts
+
+            Add the following 6 schemas at the END of the file, after the existing
+            `SetLogLevelArgsSchema` definition. Append in this exact order:
+
+            ```typescript
+            export const GoToDefinitionArgsSchema = z.object({
+              file_path: z.string().describe("Path to the file containing the symbol"),
+              language_id: z.string().describe("The programming language the file is written in"),
+              line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+              column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+            });
+
+            export const GetDocumentSymbolsArgsSchema = z.object({
+              file_path: z.string().describe("Path to the file"),
+              language_id: z.string().describe("The programming language the file is written in"),
+            });
+
+            export const GetWorkspaceSymbolsArgsSchema = z.object({
+              query: z.string().describe("Search query string to filter workspace symbols. Use empty string to list all symbols."),
+            });
+
+            export const GetSignatureHelpArgsSchema = z.object({
+              file_path: z.string().describe("Path to the file"),
+              language_id: z.string().describe("The programming language the file is written in"),
+              line: z.coerce.number().describe("Line number of the call site (1-based)"),
+              column: z.coerce.number().describe("Column position inside the argument list (1-based)"),
+            });
+
+            export const FormatDocumentArgsSchema = z.object({
+              file_path: z.string().describe("Path to the file to format"),
+              language_id: z.string().describe("The programming language the file is written in"),
+              tab_size: z.coerce.number().optional().default(2).describe("Number of spaces per tab"),
+              insert_spaces: z.boolean().optional().default(true).describe("Use spaces instead of tabs"),
+            });
+
+            export const RenameSymbolArgsSchema = z.object({
+              file_path: z.string().describe("Path to the file containing the symbol to rename"),
+              language_id: z.string().describe("The programming language the file is written in"),
+              line: z.coerce.number().describe("Line number of the symbol (1-based)"),
+              column: z.coerce.number().describe("Column position of the symbol (1-based)"),
+              new_name: z.string().describe("The new name for the symbol"),
+            });
+            ```
+
+            Insert before this exact text (the two blank lines at the end of the file):
+            ```typescript
+            export const SetLogLevelArgsSchema = z.object({
+              level: z.enum(['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'])
+                .describe("The logging level to set")
+            });
+
+
+            ```
+            Append after the `SetLogLevelArgsSchema` block (after the last closing `});`).
+
+            ## Step 2: Add imports to src/tools/index.ts
+
+            The existing import from `../types/index.js` must be expanded to include
+            the 6 new schemas. Find this import statement:
+
+            ```typescript
+            import {
+              GetInfoOnLocationArgsSchema,
+              GetCompletionsArgsSchema,
+              GetCodeActionsArgsSchema,
+              GetReferencesArgsSchema,
+              StartLspArgsSchema,
+              OpenDocumentArgsSchema,
+              CloseDocumentArgsSchema,
+              GetDiagnosticsArgsSchema,
+              SetLogLevelArgsSchema,
+              ToolInput,
+              ToolHandler
+            } from "../types/index.js";
+            ```
+
+            Replace it with:
+
+            ```typescript
+            import {
+              GetInfoOnLocationArgsSchema,
+              GetCompletionsArgsSchema,
+              GetCodeActionsArgsSchema,
+              GetReferencesArgsSchema,
+              StartLspArgsSchema,
+              OpenDocumentArgsSchema,
+              CloseDocumentArgsSchema,
+              GetDiagnosticsArgsSchema,
+              SetLogLevelArgsSchema,
+              GoToDefinitionArgsSchema,
+              GetDocumentSymbolsArgsSchema,
+              GetWorkspaceSymbolsArgsSchema,
+              GetSignatureHelpArgsSchema,
+              FormatDocumentArgsSchema,
+              RenameSymbolArgsSchema,
+              ToolInput,
+              ToolHandler
+            } from "../types/index.js";
+            ```
+
+            ## Step 3: Add handler functions to src/tools/index.ts
+
+            Add 6 new named handler functions following the same pattern as existing
+            handlers. Insert them AFTER the `handleRestartLspServer` function and BEFORE
+            the `getToolHandlers` export. Insert after this exact text:
+
+            ```typescript
+            async function handleRestartLspServer(
+              getLspClient: () => LSPClient | null,
+              args: { root_dir?: string },
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              await lspClient!.restart(args.root_dir);
+              return { content: [{ type: "text", text: "LSP server restarted successfully" }] };
+            }
+            ```
+
+            Add after that closing `}`:
+
+            ```typescript
+            async function handleGoToDefinition(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof GoToDefinitionArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Getting definition in file: ${args.file_path} (${args.line}:${args.column})`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const fileContent = await fs.readFile(args.file_path, 'utf-8');
+              const fileUri = createFileUri(args.file_path);
+              await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+              const locations = await lspClient!.getDefinition(fileUri, {
+                line: args.line - 1,
+                character: args.column - 1
+              });
+              const formatted = locations.map((loc: any) => ({
+                file: loc.uri.replace(/^file:\/\//, ""),
+                line: loc.range.start.line + 1,
+                column: loc.range.start.character + 1,
+                end_line: loc.range.end.line + 1,
+                end_column: loc.range.end.character + 1,
+              }));
+              debug(`Found ${formatted.length} definition location(s)`);
+              return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+            }
+
+            async function handleGetDocumentSymbols(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof GetDocumentSymbolsArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Getting document symbols for: ${args.file_path}`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const fileContent = await fs.readFile(args.file_path, 'utf-8');
+              const fileUri = createFileUri(args.file_path);
+              await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+              const symbols = await lspClient!.getDocumentSymbols(fileUri);
+              debug(`Found ${symbols.length} document symbol(s)`);
+              return { content: [{ type: "text", text: JSON.stringify(symbols, null, 2) }] };
+            }
+
+            async function handleGetWorkspaceSymbols(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof GetWorkspaceSymbolsArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Getting workspace symbols for query: "${args.query}"`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const symbols = await lspClient!.getWorkspaceSymbols(args.query);
+              debug(`Found ${symbols.length} workspace symbol(s)`);
+              return { content: [{ type: "text", text: JSON.stringify(symbols, null, 2) }] };
+            }
+
+            async function handleGetSignatureHelp(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof GetSignatureHelpArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Getting signature help in file: ${args.file_path} (${args.line}:${args.column})`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const fileContent = await fs.readFile(args.file_path, 'utf-8');
+              const fileUri = createFileUri(args.file_path);
+              await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+              const result = await lspClient!.getSignatureHelp(fileUri, {
+                line: args.line - 1,
+                character: args.column - 1
+              });
+              const text = result !== null ? JSON.stringify(result, null, 2) : "No signature help available at this location";
+              debug(`Signature help result: ${text.slice(0, 100)}`);
+              return { content: [{ type: "text", text }] };
+            }
+
+            async function handleFormatDocument(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof FormatDocumentArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Formatting document: ${args.file_path}`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const fileContent = await fs.readFile(args.file_path, 'utf-8');
+              const fileUri = createFileUri(args.file_path);
+              await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+              const edits = await lspClient!.formatDocument(fileUri, {
+                tabSize: args.tab_size,
+                insertSpaces: args.insert_spaces,
+              });
+              debug(`Format document returned ${edits.length} edit(s)`);
+              return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
+            }
+
+            async function handleRenameSymbol(
+              getLspClient: () => LSPClient | null,
+              args: z.infer<typeof RenameSymbolArgsSchema>,
+            ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+              debug(`Renaming symbol in file: ${args.file_path} (${args.line}:${args.column}) to "${args.new_name}"`);
+              const lspClient = getLspClient();
+              checkLspClientInitialized(lspClient);
+              const fileContent = await fs.readFile(args.file_path, 'utf-8');
+              const fileUri = createFileUri(args.file_path);
+              await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+              const workspaceEdit = await lspClient!.renameSymbol(
+                fileUri,
+                { line: args.line - 1, character: args.column - 1 },
+                args.new_name,
+              );
+              const text = workspaceEdit !== null
+                ? JSON.stringify(workspaceEdit, null, 2)
+                : "Rename not supported or symbol cannot be renamed at this location";
+              debug(`Rename symbol result: ${text.slice(0, 100)}`);
+              return { content: [{ type: "text", text }] };
+            }
+            ```
+
+            ## Step 4: Register handlers in getToolHandlers
+
+            In the `getToolHandlers` function, the return object currently ends with:
+            ```typescript
+                "restart_lsp_server": {
+                  schema: RestartLspArgsSchema,
+                  handler: (args: any) => handleRestartLspServer(getLspClient, args),
+                },
+              };
+            };
+            ```
+
+            Replace those last two closing lines with:
+            ```typescript
+                "restart_lsp_server": {
+                  schema: RestartLspArgsSchema,
+                  handler: (args: any) => handleRestartLspServer(getLspClient, args),
+                },
+                "go_to_definition": {
+                  schema: GoToDefinitionArgsSchema,
+                  handler: (args: any) => handleGoToDefinition(getLspClient, args),
+                },
+                "get_document_symbols": {
+                  schema: GetDocumentSymbolsArgsSchema,
+                  handler: (args: any) => handleGetDocumentSymbols(getLspClient, args),
+                },
+                "get_workspace_symbols": {
+                  schema: GetWorkspaceSymbolsArgsSchema,
+                  handler: (args: any) => handleGetWorkspaceSymbols(getLspClient, args),
+                },
+                "get_signature_help": {
+                  schema: GetSignatureHelpArgsSchema,
+                  handler: (args: any) => handleGetSignatureHelp(getLspClient, args),
+                },
+                "format_document": {
+                  schema: FormatDocumentArgsSchema,
+                  handler: (args: any) => handleFormatDocument(getLspClient, args),
+                },
+                "rename_symbol": {
+                  schema: RenameSymbolArgsSchema,
+                  handler: (args: any) => handleRenameSymbol(getLspClient, args),
+                },
+              };
+            };
+            ```
+
+            ## Step 5: Add tool definitions in getToolDefinitions
+
+            In `getToolDefinitions`, the array currently ends with the `restart_lsp_server`
+            entry. Find the closing bracket of the last entry:
+            ```typescript
+                {
+                  name: "restart_lsp_server",
+                  description: "Restart the LSP server process. Use this if the LSP server becomes unresponsive or after making significant changes to the project structure. Optionally provide a new root_dir to restart with a different workspace root.",
+                  inputSchema: zodToJsonSchema(RestartLspArgsSchema) as ToolInput,
+                },
+              ];
+            };
+            ```
+
+            Replace that closing `];` with:
+            ```typescript
+                {
+                  name: "go_to_definition",
+                  description: "Jump to the definition of a symbol at a specific location in a file via LSP. Returns the file path and position where the symbol is defined. Useful for navigating to type declarations, function implementations, or variable assignments across the codebase.",
+                  inputSchema: zodToJsonSchema(GoToDefinitionArgsSchema) as ToolInput,
+                },
+                {
+                  name: "get_document_symbols",
+                  description: "Get all symbols defined in a document via LSP (functions, classes, variables, methods, etc.). Returns a hierarchical DocumentSymbol tree or flat SymbolInformation list depending on server support. Use this to get a structural overview of a file.",
+                  inputSchema: zodToJsonSchema(GetDocumentSymbolsArgsSchema) as ToolInput,
+                },
+                {
+                  name: "get_workspace_symbols",
+                  description: "Search for symbols across the entire workspace via LSP. Use an empty query string to list all indexed symbols, or provide a query to filter by name. Returns matching symbol names, kinds, and locations.",
+                  inputSchema: zodToJsonSchema(GetWorkspaceSymbolsArgsSchema) as ToolInput,
+                },
+                {
+                  name: "get_signature_help",
+                  description: "Get function signature help at a specific location in a file via LSP. Returns available overloads and highlights the active parameter. Use this when the cursor is inside a function call's argument list to understand what parameters the function expects.",
+                  inputSchema: zodToJsonSchema(GetSignatureHelpArgsSchema) as ToolInput,
+                },
+                {
+                  name: "format_document",
+                  description: "Get formatting edits for an entire document via LSP. Returns TextEdit[] describing the changes needed to format the file according to the language server's style rules. The edits are returned for inspection — they are NOT applied automatically. Use this to see what formatting changes a formatter would make.",
+                  inputSchema: zodToJsonSchema(FormatDocumentArgsSchema) as ToolInput,
+                },
+                {
+                  name: "rename_symbol",
+                  description: "Get a WorkspaceEdit for renaming a symbol across the entire workspace via LSP. Returns the edit object describing all files and positions that need to change — it is NOT applied automatically. Inspect the returned WorkspaceEdit to understand the full scope of a rename before applying it.",
+                  inputSchema: zodToJsonSchema(RenameSymbolArgsSchema) as ToolInput,
+                },
+              ];
+            };
+            ```
+
+            ## Verification gate
+
+            1. Build passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npm run build
+               ```
+               Expected: exit 0, no TypeScript errors.
+
+            2. Type check passes:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npx tsc --noEmit
+               ```
+               Expected: exit 0.
+
+            3. Postcondition — 6 new schemas in types/index.ts:
+               ```
+               grep -c "ArgsSchema = z.object" /Users/dayna.blackwell/code/LSP-MCP/src/types/index.ts
+               ```
+               Expected output: 14 (8 existing + 6 new)
+
+            4. Postcondition — 6 new handlers in tools/index.ts:
+               ```
+               grep -c "^async function handle" /Users/dayna.blackwell/code/LSP-MCP/src/tools/index.ts
+               ```
+               Expected output: 16 (10 existing + 6 new)
+
+            5. Postcondition — 6 new tool names registered:
+               ```
+               grep -c '"go_to_definition"\|"get_document_symbols"\|"get_workspace_symbols"\|"get_signature_help"\|"format_document"\|"rename_symbol"' /Users/dayna.blackwell/code/LSP-MCP/src/tools/index.ts
+               ```
+               Expected output: 12 (each name appears twice: in getToolHandlers and getToolDefinitions)
+
+            6. Run tools unit test:
+               ```
+               cd /Users/dayna.blackwell/code/LSP-MCP && npm run test:tools
+               ```
+               Expected: All tests pass.
+
+            ## Constraints
+
+            - Do NOT modify src/lspClient.ts — that file is owned by Agent A.
+            - Do NOT modify index.ts — no wiring changes needed there. Tool handlers
+              are auto-discovered via getToolHandlers(); no registration needed in index.ts.
+            - The getWorkspaceSymbols handler does NOT call openDocument before the LSP
+              request — workspace/symbol takes a query string, not a file URI.
+            - rename_symbol and format_document must return edits/WorkspaceEdit as JSON
+              for inspection, NOT apply them.
+            - Match the exact existing handler function signature pattern:
+              `async function handleXxx(getLspClient: () => LSPClient | null, args: z.infer<typeof XxxSchema>)`
+          files:
+            - src/types/index.ts
+            - src/tools/index.ts
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: npm run build
+          required: true
+          repo: LSP-MCP
+        - type: typecheck
+          command: npx tsc --noEmit
+          required: true
+          repo: LSP-MCP
+        - type: test
+          command: npm test
+          required: true
+          repo: LSP-MCP
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent A inserts the capability declarations in the wrong location within the
+            initialize() capabilities block, breaking the JSON structure and causing a
+            TypeScript compile error.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent A must use the exact verbatim text anchor provided. Run `npm run build`
+            immediately after edit to confirm no syntax errors before completion.
+        - scenario: |-
+            Agent B's import expansion in tools/index.ts has a typo in a schema name
+            (e.g., GoToDefinitionArgsSchema vs GotoDefinitionArgsSchema), causing a
+            TypeScript error "Module has no exported member".
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Schema names in both files must be identical. Agent B defines the schemas in
+            types/index.ts and imports them in tools/index.ts in the same task — consistency
+            is guaranteed if both steps use the same schema names listed in the interface
+            contracts section.
+        - scenario: |-
+            getWorkspaceSymbols handler in tools/index.ts calls openDocument before the
+            workspace/symbol request (copying the pattern from handleGetReferences), but
+            workspace/symbol takes a query string and has no file URI parameter.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent B's brief explicitly states "The getWorkspaceSymbols handler does NOT
+            call openDocument before the LSP request." The handler is specified verbatim in
+            the brief and does not include an openDocument call.
+        - scenario: |-
+            textDocument/documentSymbol returns two possible shapes (DocumentSymbol[] tree
+            or SymbolInformation[] flat). If the tool handler tries to normalize to one
+            shape, it may break for servers that return the other shape.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Both Agent A's lspClient method and Agent B's handler return the raw array
+            as-is without normalization. The brief explicitly states both shapes are valid
+            and should be returned verbatim.
+        - scenario: |-
+            Agent B modifies index.ts thinking tool definitions need to be registered
+            there, causing unnecessary changes outside ownership scope.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent B's brief explicitly states "Do NOT modify index.ts — no wiring changes
+            needed there. Tool handlers are auto-discovered via getToolHandlers()." The
+            constraint section makes this prominent.
+state: "REVIEWED"
+injection_method: hook
