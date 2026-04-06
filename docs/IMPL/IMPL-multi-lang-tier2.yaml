@@ -534,6 +534,7 @@ waves:
             - test/fixtures/c/person.c
             - test/fixtures/c/greeter.c
             - test/fixtures/c/compile_commands.json
+      base_commit: 3f0a9f46921008871cccb0697b198ba4f4b52a6f
     - number: 2
       agents:
         - id: G
@@ -976,6 +977,73 @@ quality_gates:
         - type: test
           command: npm run test:multi-lang
           required: false
+completion_reports:
+    A:
+        status: complete
+        branch: saw/multi-lang-tier2/wave1-agent-A
+        commit: 735855b
+        files_changed:
+            - test/fixtures/go/greeter.go
+        files_created:
+            - test/fixtures/go/greeter.go
+        verification: PASS
+        notes: Created greeter.go with Greeter struct, NewGreeter constructor, and SayHello method. References Person type at lines 7 and 10 (struct field and parameter). Combined with main.go, get_references on Person should return 5+ locations. Build passes.
+    B:
+        status: complete
+        branch: saw/multi-lang-tier2/wave1-agent-B
+        commit: b3a1914
+        files_changed:
+            - test/fixtures/python/greeter.py
+        files_created:
+            - test/fixtures/python/greeter.py
+        verification: PASS
+        notes: Created greeter.py importing Person from main.py. Person appears on lines 1 (import) and 4 (type annotation). Build gate passed via pre-commit hook. Did not touch main.py or test files.
+    C:
+        status: complete
+        branch: saw/multi-lang-tier2/wave1-agent-C
+        commit: 5c8ecb6
+        files_changed:
+            - test/fixtures/rust/src/main.rs
+            - test/fixtures/rust/src/greeter.rs
+        files_created:
+            - test/fixtures/rust/src/greeter.rs
+        verification: PASS
+        notes: Made Person pub struct, pub fn new, pub fn greet in main.rs; added mod greeter; directive; created greeter.rs with Greeter struct using crate::Person. Pre-commit hook confirmed build passes.
+    D:
+        status: complete
+        branch: saw/multi-lang-tier2/wave1-agent-D
+        commit: a15b402
+        files_changed:
+            - test/fixtures/java/src/main/java/com/example/Greeter.java
+        files_created:
+            - test/fixtures/java/src/main/java/com/example/Greeter.java
+        verification: PASS
+        notes: Greeter.java created with Person references on lines 4 and 6. Build passes. Person.java untouched.
+    E:
+        status: complete
+        branch: saw/multi-lang-tier2/wave1-agent-E
+        commit: 078d68b
+        files_changed:
+            - test/fixtures/php/Greeter.php
+        files_created:
+            - test/fixtures/php/Greeter.php
+        verification: PASS
+        notes: PHP Greeter fixture created. Person appears at lines 6 (typed property) and 8 (constructor param). Build passes. Cross-file references ready for get_references tests.
+    F:
+        status: complete
+        branch: saw/multi-lang-tier2/wave1-agent-F
+        commit: b8a09dc
+        files_changed:
+            - test/fixtures/c/person.h
+            - test/fixtures/c/person.c
+            - test/fixtures/c/greeter.c
+            - test/fixtures/c/compile_commands.json
+        files_created:
+            - test/fixtures/c/person.h
+            - test/fixtures/c/greeter.c
+            - test/fixtures/c/compile_commands.json
+        verification: PASS
+        notes: C fixture refactored into header/implementation split. person.h has typedef and declarations; person.c includes person.h and provides implementations; greeter.c added for cross-file references; compile_commands.json added for clangd indexing. All verification checks pass. go_to_declaration from person.c Person type will resolve to person.h line 7.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1090,5 +1158,5 @@ critic_report:
     summary: 'All 7 agent briefs verified against the codebase. File existence checks pass for all action:new and action:modify entries. Position metadata in Agent G''s brief is accurate against the actual fixture files (Go, Python, Java, PHP all checked line-by-line). Agent C''s brief has two minor description inaccuracies: the stated resulting line numbers for pub fn new (says line 7, actual line 8) and pub fn greet (says line 15, actual line 16) are off by 1, but the implementation instructions themselves (add pub keywords, insert mod greeter;) are correct and unambiguous. Pattern accuracy for Agent G''s insertion points is exact — the anchor text blocks in the brief match the actual multi-lang.test.js file content. No missing callers, no disjoint ownership violations, no import chain issues, and no complexity imbalances.'
     reviewed_at: "2026-04-06T06:22:35Z"
     issue_count: 2
-state: "REVIEWED"
+state: "WAVE_VERIFIED"
 injection_method: hook
