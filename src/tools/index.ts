@@ -12,6 +12,12 @@ import {
   CloseDocumentArgsSchema,
   GetDiagnosticsArgsSchema,
   SetLogLevelArgsSchema,
+  GoToDefinitionArgsSchema,
+  GetDocumentSymbolsArgsSchema,
+  GetWorkspaceSymbolsArgsSchema,
+  GetSignatureHelpArgsSchema,
+  FormatDocumentArgsSchema,
+  RenameSymbolArgsSchema,
   ToolInput,
   ToolHandler
 } from "../types/index.js";
@@ -261,6 +267,117 @@ async function handleRestartLspServer(
   return { content: [{ type: "text", text: "LSP server restarted successfully" }] };
 }
 
+async function handleGoToDefinition(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof GoToDefinitionArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Getting definition in file: ${args.file_path} (${args.line}:${args.column})`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const locations = await lspClient!.getDefinition(fileUri, {
+    line: args.line - 1,
+    character: args.column - 1
+  });
+  const formatted = locations.map((loc: any) => ({
+    file: loc.uri.replace(/^file:\/\//, ""),
+    line: loc.range.start.line + 1,
+    column: loc.range.start.character + 1,
+    end_line: loc.range.end.line + 1,
+    end_column: loc.range.end.character + 1,
+  }));
+  debug(`Found ${formatted.length} definition location(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }] };
+}
+
+async function handleGetDocumentSymbols(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof GetDocumentSymbolsArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Getting document symbols for: ${args.file_path}`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const symbols = await lspClient!.getDocumentSymbols(fileUri);
+  debug(`Found ${symbols.length} document symbol(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(symbols, null, 2) }] };
+}
+
+async function handleGetWorkspaceSymbols(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof GetWorkspaceSymbolsArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Getting workspace symbols for query: "${args.query}"`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const symbols = await lspClient!.getWorkspaceSymbols(args.query);
+  debug(`Found ${symbols.length} workspace symbol(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(symbols, null, 2) }] };
+}
+
+async function handleGetSignatureHelp(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof GetSignatureHelpArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Getting signature help in file: ${args.file_path} (${args.line}:${args.column})`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const result = await lspClient!.getSignatureHelp(fileUri, {
+    line: args.line - 1,
+    character: args.column - 1
+  });
+  const text = result !== null ? JSON.stringify(result, null, 2) : "No signature help available at this location";
+  debug(`Signature help result: ${text.slice(0, 100)}`);
+  return { content: [{ type: "text", text }] };
+}
+
+async function handleFormatDocument(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof FormatDocumentArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Formatting document: ${args.file_path}`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const edits = await lspClient!.formatDocument(fileUri, {
+    tabSize: args.tab_size,
+    insertSpaces: args.insert_spaces,
+  });
+  debug(`Format document returned ${edits.length} edit(s)`);
+  return { content: [{ type: "text", text: JSON.stringify(edits, null, 2) }] };
+}
+
+async function handleRenameSymbol(
+  getLspClient: () => LSPClient | null,
+  args: z.infer<typeof RenameSymbolArgsSchema>,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  debug(`Renaming symbol in file: ${args.file_path} (${args.line}:${args.column}) to "${args.new_name}"`);
+  const lspClient = getLspClient();
+  checkLspClientInitialized(lspClient);
+  const fileContent = await fs.readFile(args.file_path, 'utf-8');
+  const fileUri = createFileUri(args.file_path);
+  await lspClient!.openDocument(fileUri, fileContent, args.language_id);
+  const workspaceEdit = await lspClient!.renameSymbol(
+    fileUri,
+    { line: args.line - 1, character: args.column - 1 },
+    args.new_name,
+  );
+  const text = workspaceEdit !== null
+    ? JSON.stringify(workspaceEdit, null, 2)
+    : "Rename not supported or symbol cannot be renamed at this location";
+  debug(`Rename symbol result: ${text.slice(0, 100)}`);
+  return { content: [{ type: "text", text }] };
+}
+
 // Define handlers for each tool
 export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerPath: string, lspServerArgs: string[], setLspClient: (client: LSPClient) => void, rootDir: string, setRootDir: (dir: string) => void, server?: any) => {
   return {
@@ -303,6 +420,30 @@ export const getToolHandlers = (getLspClient: () => LSPClient | null, lspServerP
     "restart_lsp_server": {
       schema: RestartLspArgsSchema,
       handler: (args: any) => handleRestartLspServer(getLspClient, args),
+    },
+    "go_to_definition": {
+      schema: GoToDefinitionArgsSchema,
+      handler: (args: any) => handleGoToDefinition(getLspClient, args),
+    },
+    "get_document_symbols": {
+      schema: GetDocumentSymbolsArgsSchema,
+      handler: (args: any) => handleGetDocumentSymbols(getLspClient, args),
+    },
+    "get_workspace_symbols": {
+      schema: GetWorkspaceSymbolsArgsSchema,
+      handler: (args: any) => handleGetWorkspaceSymbols(getLspClient, args),
+    },
+    "get_signature_help": {
+      schema: GetSignatureHelpArgsSchema,
+      handler: (args: any) => handleGetSignatureHelp(getLspClient, args),
+    },
+    "format_document": {
+      schema: FormatDocumentArgsSchema,
+      handler: (args: any) => handleFormatDocument(getLspClient, args),
+    },
+    "rename_symbol": {
+      schema: RenameSymbolArgsSchema,
+      handler: (args: any) => handleRenameSymbol(getLspClient, args),
     },
   };
 };
@@ -359,6 +500,36 @@ export const getToolDefinitions = () => {
       name: "restart_lsp_server",
       description: "Restart the LSP server process. Use this if the LSP server becomes unresponsive or after making significant changes to the project structure. Optionally provide a new root_dir to restart with a different workspace root.",
       inputSchema: zodToJsonSchema(RestartLspArgsSchema) as ToolInput,
+    },
+    {
+      name: "go_to_definition",
+      description: "Jump to the definition of a symbol at a specific location in a file via LSP. Returns the file path and position where the symbol is defined. Useful for navigating to type declarations, function implementations, or variable assignments across the codebase.",
+      inputSchema: zodToJsonSchema(GoToDefinitionArgsSchema) as ToolInput,
+    },
+    {
+      name: "get_document_symbols",
+      description: "Get all symbols defined in a document via LSP (functions, classes, variables, methods, etc.). Returns a hierarchical DocumentSymbol tree or flat SymbolInformation list depending on server support. Use this to get a structural overview of a file.",
+      inputSchema: zodToJsonSchema(GetDocumentSymbolsArgsSchema) as ToolInput,
+    },
+    {
+      name: "get_workspace_symbols",
+      description: "Search for symbols across the entire workspace via LSP. Use an empty query string to list all indexed symbols, or provide a query to filter by name. Returns matching symbol names, kinds, and locations.",
+      inputSchema: zodToJsonSchema(GetWorkspaceSymbolsArgsSchema) as ToolInput,
+    },
+    {
+      name: "get_signature_help",
+      description: "Get function signature help at a specific location in a file via LSP. Returns available overloads and highlights the active parameter. Use this when the cursor is inside a function call's argument list to understand what parameters the function expects.",
+      inputSchema: zodToJsonSchema(GetSignatureHelpArgsSchema) as ToolInput,
+    },
+    {
+      name: "format_document",
+      description: "Get formatting edits for an entire document via LSP. Returns TextEdit[] describing the changes needed to format the file according to the language server's style rules. The edits are returned for inspection — they are NOT applied automatically. Use this to see what formatting changes a formatter would make.",
+      inputSchema: zodToJsonSchema(FormatDocumentArgsSchema) as ToolInput,
+    },
+    {
+      name: "rename_symbol",
+      description: "Get a WorkspaceEdit for renaming a symbol across the entire workspace via LSP. Returns the edit object describing all files and positions that need to change — it is NOT applied automatically. Inspect the returned WorkspaceEdit to understand the full scope of a rename before applying it.",
+      inputSchema: zodToJsonSchema(RenameSymbolArgsSchema) as ToolInput,
     },
   ];
 };
