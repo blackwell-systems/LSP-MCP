@@ -62,6 +62,17 @@ export class LSPClient {
       debug(`LSP Server Message: ${data.toString()}`);
     });
 
+    this.process.on("error", (err: Error) => {
+      error(`LSP server process error: ${err.message}`);
+      // Reject pending promises so callers don't hang
+      if (this.responsePromises.size > 0) {
+        for (const [id, promise] of this.responsePromises) {
+          promise.reject(err);
+          this.responsePromises.delete(id);
+        }
+      }
+    });
+
     this.process.on("close", (code: number) => {
       notice(`LSP server process exited with code ${code}`);
       this.initialized = false;
