@@ -356,6 +356,7 @@ export class LSPClient {
     "textDocument/signatureHelp": 30000,
     "textDocument/formatting": 30000,
     "textDocument/rename": 30000,
+    "workspace/executeCommand": 30000,
   };
   private static readonly DEFAULT_REQUEST_TIMEOUT = 30000;
 
@@ -1023,6 +1024,117 @@ export class LSPClient {
       return response ?? null;
     } catch (err) {
       warning(`Error renaming symbol: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return null;
+  }
+
+  async getTypeDefinition(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting type definition at location: ${uri} (${position.line}:${position.character})`);
+
+    if (!this.serverCapabilities?.typeDefinitionProvider) {
+      debug("Server does not declare typeDefinitionProvider capability — skipping typeDefinition request");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/typeDefinition", {
+        textDocument: { uri },
+        position,
+      });
+
+      if (Array.isArray(response)) {
+        // Normalize LocationLink[] to Location[] if needed
+        return response.map((loc: any) => {
+          if (loc.targetUri) {
+            // LocationLink shape — map to Location
+            return { uri: loc.targetUri, range: loc.targetRange };
+          }
+          return loc;
+        });
+      } else if (response && response.uri) {
+        // Single Location
+        return [response];
+      }
+    } catch (err) {
+      warning(`Error getting type definition: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  async getImplementation(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting implementation at location: ${uri} (${position.line}:${position.character})`);
+
+    if (!this.serverCapabilities?.implementationProvider) {
+      debug("Server does not declare implementationProvider capability — skipping implementation request");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/implementation", {
+        textDocument: { uri },
+        position,
+      });
+
+      if (Array.isArray(response)) {
+        // Normalize LocationLink[] to Location[] if needed
+        return response.map((loc: any) => {
+          if (loc.targetUri) {
+            // LocationLink shape — map to Location
+            return { uri: loc.targetUri, range: loc.targetRange };
+          }
+          return loc;
+        });
+      } else if (response && response.uri) {
+        // Single Location
+        return [response];
+      }
+    } catch (err) {
+      warning(`Error getting implementation: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  async executeCommand(
+    command: string,
+    args?: any[],
+  ): Promise<any | null> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Executing command: ${command} (${args?.length ?? 0} arg(s))`);
+
+    if (!this.serverCapabilities?.executeCommandProvider) {
+      debug("Server does not declare executeCommandProvider capability — skipping executeCommand request");
+      return null;
+    }
+
+    try {
+      const response = await this.sendRequest<any>("workspace/executeCommand", {
+        command,
+        arguments: args,
+      });
+
+      return response ?? null;
+    } catch (err) {
+      warning(`Error executing command: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     return null;
