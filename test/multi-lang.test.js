@@ -37,6 +37,7 @@ const LANGUAGES = [
     referenceColumn: 18,    // column of 'Person'
     completionLine: 7,      // consumer.ts: 'const alice: Person = { name: ...'
     completionColumn: 26,   // after 'alice: Person = { ' (after opening brace)
+    completionFile: path.join(__dirname, 'ts-project', 'src', 'consumer.ts'),
     workspaceSymbolQuery: 'Person',
     supportsFormatting: true,
     secondFile: path.join(__dirname, 'ts-project', 'src', 'consumer.ts'),
@@ -112,7 +113,7 @@ const LANGUAGES = [
     name: 'Java',
     id: 'java',
     binary: 'jdtls',
-    serverArgs: [],
+    serverArgs: ['-data', '/tmp/jdtls-workspace-lsp-mcp-test'],
     logLevel: 'notice',  // verbose so crashes surface in CI
     fixture: path.join(__dirname, 'fixtures/java'),  // jdtls needs project root with pom.xml
     file: path.join(__dirname, 'fixtures/java', 'src', 'main', 'java', 'com', 'example', 'Person.java'),
@@ -151,7 +152,7 @@ const LANGUAGES = [
     workspaceSymbolQuery: 'Person',
     supportsFormatting: true,
     secondFile: path.join(__dirname, 'fixtures/c', 'greeter.c'),
-    symbolName: 'Person',
+    symbolName: 'create_person',
     declarationLine: 3,     // 'Person create_person(...)' in person.c — go_to_declaration resolves to person.h
     declarationColumn: 1,   // column 1
   },
@@ -167,7 +168,7 @@ const LANGUAGES = [
     definitionLine: 20,     // 'public static function add(int $x, int $y): int {'
     definitionColumn: 24,   // column of 'add'
     callSiteLine: 27,       // 'echo Person::add(1, 2);'
-    callSiteColumn: 6,      // column of 'Person' in 'Person::add' (static call)
+    callSiteColumn: 14,     // column of 'add' in 'Person::add' (static call)
     referenceLine: 6,       // 'class Person {'
     referenceColumn: 7,     // column of 'Person'
     completionLine: 26,     // '$p = new Person("Alice", 30);'  — after 'new Person('
@@ -355,7 +356,7 @@ async function testGetCompletions(client, lang) {
     const result = await client.callTool({
       name: 'get_completions',
       arguments: {
-        file_path: lang.file,
+        file_path: lang.completionFile || lang.file,
         language_id: lang.id,
         line: lang.completionLine,
         column: lang.completionColumn,
