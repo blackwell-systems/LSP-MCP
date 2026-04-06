@@ -350,6 +350,12 @@ export class LSPClient {
     "textDocument/hover": 30000,
     "textDocument/completion": 30000,
     "textDocument/codeAction": 30000,
+    "textDocument/definition": 30000,
+    "textDocument/documentSymbol": 30000,
+    "workspace/symbol": 30000,
+    "textDocument/signatureHelp": 30000,
+    "textDocument/formatting": 30000,
+    "textDocument/rename": 30000,
   };
   private static readonly DEFAULT_REQUEST_TIMEOUT = 30000;
 
@@ -489,6 +495,20 @@ export class LSPClient {
             codeAction: {
               dynamicRegistration: true,
             },
+            signatureHelp: {
+              signatureInformation: {
+                parameterInformation: {
+                  labelOffsetSupport: true,
+                },
+              },
+            },
+            documentSymbol: {
+              hierarchicalDocumentSymbolSupport: true,
+            },
+            rename: {
+              prepareSupport: false,
+            },
+            formatting: {},
             diagnostic: {
               dynamicRegistration: false,
             },
@@ -816,6 +836,196 @@ export class LSPClient {
     }
 
     return [];
+  }
+
+  async getDefinition(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }>> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting definition at location: ${uri} (${position.line}:${position.character})`);
+
+    if (!this.serverCapabilities?.definitionProvider) {
+      debug("Server does not declare definitionProvider capability — skipping definition request");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/definition", {
+        textDocument: { uri },
+        position,
+      });
+
+      if (Array.isArray(response)) {
+        // Normalize LocationLink[] to Location[] if needed
+        return response.map((loc: any) => {
+          if (loc.targetUri) {
+            // LocationLink shape — map to Location
+            return { uri: loc.targetUri, range: loc.targetRange };
+          }
+          return loc;
+        });
+      } else if (response && response.uri) {
+        // Single Location
+        return [response];
+      }
+    } catch (err) {
+      warning(`Error getting definition: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  async getDocumentSymbols(
+    uri: string,
+  ): Promise<any[]> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting document symbols for: ${uri}`);
+
+    if (!this.serverCapabilities?.documentSymbolProvider) {
+      debug("Server does not declare documentSymbolProvider capability — skipping documentSymbol request");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/documentSymbol", {
+        textDocument: { uri },
+      });
+
+      if (Array.isArray(response)) {
+        return response;
+      }
+    } catch (err) {
+      warning(`Error getting document symbols: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  async getWorkspaceSymbols(
+    query: string,
+  ): Promise<any[]> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting workspace symbols for query: "${query}"`);
+
+    if (!this.serverCapabilities?.workspaceSymbolProvider) {
+      debug("Server does not declare workspaceSymbolProvider capability — skipping workspace/symbol request");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("workspace/symbol", {
+        query,
+      });
+
+      if (Array.isArray(response)) {
+        return response;
+      }
+    } catch (err) {
+      warning(`Error getting workspace symbols: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  async getSignatureHelp(
+    uri: string,
+    position: { line: number; character: number },
+  ): Promise<any | null> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Getting signature help at location: ${uri} (${position.line}:${position.character})`);
+
+    if (!this.serverCapabilities?.signatureHelpProvider) {
+      debug("Server does not declare signatureHelpProvider capability — skipping signatureHelp request");
+      return null;
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/signatureHelp", {
+        textDocument: { uri },
+        position,
+      });
+
+      return response ?? null;
+    } catch (err) {
+      warning(`Error getting signature help: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return null;
+  }
+
+  async formatDocument(
+    uri: string,
+    options: { tabSize: number; insertSpaces: boolean },
+  ): Promise<any[]> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Formatting document: ${uri}`);
+
+    if (!this.serverCapabilities?.documentFormattingProvider) {
+      debug("Server does not declare documentFormattingProvider capability — skipping formatting request");
+      return [];
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/formatting", {
+        textDocument: { uri },
+        options,
+      });
+
+      if (Array.isArray(response)) {
+        return response;
+      }
+    } catch (err) {
+      warning(`Error formatting document: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return [];
+  }
+
+  async renameSymbol(
+    uri: string,
+    position: { line: number; character: number },
+    newName: string,
+  ): Promise<any | null> {
+    if (!this.initialized) {
+      throw new Error("LSP server not initialized yet");
+    }
+
+    debug(`Renaming symbol at: ${uri} (${position.line}:${position.character}) to "${newName}"`);
+
+    if (!this.serverCapabilities?.renameProvider) {
+      debug("Server does not declare renameProvider capability — skipping rename request");
+      return null;
+    }
+
+    try {
+      const response = await this.sendRequest<any>("textDocument/rename", {
+        textDocument: { uri },
+        position,
+        newName,
+      });
+
+      return response ?? null;
+    } catch (err) {
+      warning(`Error renaming symbol: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return null;
   }
 
   // Reopen a specific document to get latest content from disk
