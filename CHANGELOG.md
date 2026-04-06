@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `initLogging()` function for explicit console override initialization (improves test isolation)
 - Type-safe interfaces for LSP diagnostics (`LSPDiagnostic`)
 - Diagnostic filtering for `getCodeActions` - now passes overlapping diagnostics per LSP 3.17 spec §3.16.8
+- Multi-language integration test suite (`test/multi-lang.test.js`) covering Go, Python, Rust, TypeScript, and Java with graceful skip when a language server is not installed
+- Language fixture projects for Go (`go.mod`), Python (`pyrightconfig.json`), Rust (`Cargo.toml`), and Java as test targets
+- CI job `multi-lang-test` installing all 5 language servers (gopls, pyright, rust-analyzer, typescript-language-server, jdtls) and running the full suite
 - Client capability declarations for `references`, `definition`, `implementation`, `typeDefinition` per LSP 3.17 §3.15.2
 - Server capability checks before sending `hover`, `completion`, `codeAction`, `references` requests per LSP 3.17 §3.15.3
 - `$/progress` "report" kind handling for intermediate progress notifications per LSP 3.17 §3.18
