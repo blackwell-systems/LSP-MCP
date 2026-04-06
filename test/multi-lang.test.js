@@ -192,6 +192,7 @@ async function testLanguage(lang) {
 
   let serverProcess = null;
   let client = null;
+  const serverStderrLines = [];
 
   try {
     // Verify fixture file exists
@@ -207,7 +208,6 @@ async function testLanguage(lang) {
     });
 
     // Capture server stderr for diagnostics on failure
-    const serverStderrLines = [];
     serverProcess.stderr.on('data', (data) => {
       const text = data.toString().trim();
       if (process.env.VERBOSE) {

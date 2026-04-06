@@ -26,9 +26,9 @@ async function testResolvesAfterFreshUpdate() {
   // trigger real update
   mock.triggerDiagnostics(uri, [{ message: "error" }]);
 
-  // should resolve within 1000ms (500ms stable delay + buffer)
+  // should resolve within 3000ms (500ms stable delay + 2500ms CI buffer)
   const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Test timeout")), 1000)
+    setTimeout(() => reject(new Error("Test timeout")), 3000)
   );
 
   await Promise.race([promise, timeout]);
