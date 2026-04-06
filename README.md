@@ -9,13 +9,17 @@
 
 Language servers are the intelligence layer behind IDE features — autocompletion, go-to-definition, inline errors, find-all-references. They run as background processes and understand code at a semantic level: types, symbols, scope, and cross-file relationships. Every major editor uses them silently. lsp-mcp exposes that same intelligence to agents through the MCP protocol.
 
+lsp-mcp turns language servers into queryable infrastructure for agents.
+
 The most complete MCP server for language intelligence — built for agents, not just protocol passthrough. **24 tools** spanning navigation, diagnostics, refactoring, and formatting. CI-verified across **7 languages**. Built directly against the [LSP 3.17 specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
 
 Unlike typical MCP-LSP bridges, lsp-mcp maintains a **persistent language server session** — agents operate on a fully indexed, stateful workspace with real-time diagnostics and cross-file reasoning, not a cold-started stub that forgets context between calls.
 
 Designed for agentic workflows where correctness, persistence, and cross-language reliability are required.
 
-**Token efficiency:** Language servers maintain a pre-built index of the entire workspace. Instead of loading files into context to find usages, trace types, or locate definitions, agents query the index directly — `get_references` returns the 12 call sites without pasting 5 files, `get_info_on_location` returns the type signature at one position without loading the module, `get_diagnostics` returns only the errors without reading every file. The persistent session means indexing happens once on `start_lsp`; every subsequent query hits the warm index.
+The LSP layer agents can actually rely on.
+
+**Token efficiency (critical for LLM agents):** Language servers maintain a pre-built index of the entire workspace. Instead of loading files into context to find usages, trace types, or locate definitions, agents query the index directly — `get_references` returns the 12 call sites without pasting 5 files, `get_info_on_location` returns the type signature at one position without loading the module, `get_diagnostics` returns only the errors without reading every file. The persistent session means indexing happens once on `start_lsp`; every subsequent query hits the warm index.
 
 ## Why lsp-mcp
 
