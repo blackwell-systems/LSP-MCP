@@ -6,13 +6,71 @@ The spec section links below are anchored directly into the specification.
 
 ---
 
+## Method Coverage Matrix
+
+Every LSP 3.17 method and its MCP surface. "Protocol only" means the method is correctly handled at the transport layer (capabilities declared, responses sent) but not exposed as an MCP tool.
+
+### Text Document Methods
+
+| LSP Method | Spec | MCP Tool | Status |
+|-----------|------|----------|--------|
+| `textDocument/didOpen` | §3.15.7 | `open_document` | ✓ |
+| `textDocument/didClose` | §3.15.9 | `close_document` | ✓ |
+| `textDocument/publishDiagnostics` | §3.17.1 | `get_diagnostics` | ✓ |
+| `textDocument/hover` | §3.15.11 | `get_info_on_location` | ✓ |
+| `textDocument/completion` | §3.15.13 | `get_completions` | ✓ |
+| `textDocument/signatureHelp` | §3.15.14 | `get_signature_help` | ✓ |
+| `textDocument/definition` | §3.15.2 | `go_to_definition` | ✓ |
+| `textDocument/references` | §3.15.8 | `get_references` | ✓ |
+| `textDocument/documentSymbol` | §3.15.20 | `get_document_symbols` | ✓ |
+| `textDocument/codeAction` | §3.15.22 | `get_code_actions` | ✓ |
+| `textDocument/formatting` | §3.15.16 | `format_document` | ✓ |
+| `textDocument/rename` | §3.15.19 | `rename_symbol` | ✓ |
+| `textDocument/typeDefinition` | §3.15.3 | — | ✗ capability declared, tool pending |
+| `textDocument/implementation` | §3.15.4 | — | ✗ capability declared, tool pending |
+| `textDocument/declaration` | §3.15.5 | — | ✗ not yet implemented |
+| `textDocument/prepareRename` | §3.15.19 | — | ✗ not yet implemented |
+| `textDocument/selectionRange` | §3.15.29 | — | ✗ not yet implemented |
+| `textDocument/foldingRange` | §3.15.28 | — | ✗ not yet implemented |
+| `textDocument/documentHighlight` | §3.15.10 | — | ✗ not yet implemented |
+| `textDocument/rangeFormatting` | §3.15.17 | — | ✗ not yet implemented |
+| `textDocument/codeLens` | §3.15.21 | — | ✗ not yet implemented |
+| `textDocument/inlayHint` | §3.17.11 | — | ✗ not yet implemented |
+| `textDocument/semanticTokens` | §3.16.12 | — | ✗ not yet implemented |
+
+### Workspace Methods
+
+| LSP Method | Spec | MCP Tool | Status |
+|-----------|------|----------|--------|
+| `workspace/symbol` | §3.15.21 | `get_workspace_symbols` | ✓ |
+| `workspace/configuration` | §3.16.14 | — | ✓ protocol only (server-initiated) |
+| `workspace/executeCommand` | §3.16.13 | — | ✗ not yet implemented |
+| `workspace/didChangeWatchedFiles` | §3.16.8 | — | ✗ capability declared only |
+
+### Protocol Infrastructure
+
+| Area | Status |
+|------|--------|
+| Lifecycle (`initialize` → `initialized` → `shutdown`) | ✓ |
+| Progress protocol (`$/progress` begin/report/end) | ✓ |
+| `window/workDoneProgress/create` (server-initiated) | ✓ |
+| `client/registerCapability` (server-initiated) | ✓ |
+| Unrecognized server requests | ✓ (null response) |
+| Message framing (Content-Length, UTF-8 byte count) | ✓ |
+| JSON-RPC 2.0 shapes | ✓ |
+| LSP error codes (-32601, -32002) | ✓ |
+| Process crash → pending promise rejection | ✓ |
+
+---
+
 ## [Lifecycle](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#lifeCycleMessages) (§3.15.1–3.15.4)
 
 - Correct `initialize` → `initialized` → `shutdown` sequence
 - Graceful async shutdown via `SIGINT`/`SIGTERM` — the LSP subprocess is never orphaned on exit
 - Client capabilities declared for every feature used: `hover`, `completion`, `references`, `definition`, `implementation`, `typeDefinition`, `codeAction`, `publishDiagnostics`, `window.workDoneProgress`, `workspace.configuration`
 - Server capabilities checked before sending requests — if a server doesn't declare `hoverProvider`, `completionProvider`, `referencesProvider`, or `codeActionProvider`, the request is skipped rather than being sent and silently returning empty results
-- `initialize` timeout set to 120s to accommodate JVM-based servers (jdtls) that require 60-90s for cold OSGi container startup
+- `initialize` timeout set to 300s to accommodate JVM-based servers (jdtls) that require 60-90s for cold OSGi container startup
+- LSP process crash immediately rejects all pending promises — callers fail fast rather than waiting for individual timeouts
 
 ---
 
