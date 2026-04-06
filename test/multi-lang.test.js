@@ -118,7 +118,7 @@ const LANGUAGES = [
     javaHome: '/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home',
     fixture: path.join(__dirname, 'fixtures/java'),  // jdtls needs project root with pom.xml
     file: path.join(__dirname, 'fixtures/java', 'src', 'main', 'java', 'com', 'example', 'Person.java'),
-    hoverLine: 5,     // line with 'public class Person' (shifted +1 by package declaration)
+    hoverLine: 6,     // line with 'public class Person' (package decl on line 1 shifts it to 6)
     hoverColumn: 14,  // column on 'Person'
     definitionLine: 20,     // 'public static int add(int x, int y) {'
     definitionColumn: 23,   // column of 'add'
